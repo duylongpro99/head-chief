@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Runtime ledger (created by the skill in target projects; never part of the skill source)
+.orchestrator/
