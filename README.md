@@ -15,23 +15,23 @@ This repo ships **two skills** that work together:
 
 ```bash
 # Install both skills (the CLI lists them and lets you choose)
-npx skills add <OWNER>/head-chief
+npx skills add duylongpro99/head-chief
 
 # Install everything non-interactively
-npx skills add <OWNER>/head-chief --all
+npx skills add duylongpro99/head-chief --all
 
 # Install just the orchestrator (skip session lifecycle)
-npx skills add <OWNER>/head-chief --skill head-chief
+npx skills add duylongpro99/head-chief --skill head-chief
 ```
 
-Replace `<OWNER>` with the GitHub owner this repo is published under. Installed skills live at `.claude/skills/<name>/` (project scope) or `~/.claude/skills/<name>/` (global, with `-g`).
+Installed skills live at `.claude/skills/<name>/` (project scope) or `~/.claude/skills/<name>/` (global, with `-g`).
 
 ```bash
 # Install globally for all projects, Claude Code only
-npx skills add <OWNER>/head-chief --all -g -a claude-code
+npx skills add duylongpro99/head-chief --all -g -a claude-code
 
 # Preview a skill without installing
-npx skills use <OWNER>/head-chief --skill head-chief | claude
+npx skills use duylongpro99/head-chief --skill head-chief | claude
 ```
 
 ## Use
