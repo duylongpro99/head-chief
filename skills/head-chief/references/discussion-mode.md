@@ -49,8 +49,8 @@ C7 `now` helper, never hand-typed (see [F.1](#f1--invocation--args)).
 
 For each lens the chief:
 
-1. Spawn **at the project root** via the `cris-cc-session` skill:
-   `cris-cc-session --s-name <project>-<vibe> --p-name <vibe>`. Root at the project root so every peer
+1. Spawn **at the project root** via the `managed-session` skill:
+   `managed-session --s-name <project>-<vibe> --p-name <vibe>`. Root at the project root so every peer
    shares the same filesystem → the same `.orchestrator/` ledger (**the only durable channel**;
    `SendMessage` is just a doorbell). Record `pane_id` + **confirmed root** + the stable `[ref]` (C8)
    in `tracks/<vibe>/status.md`.

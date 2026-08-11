@@ -14,7 +14,7 @@ Makes THIS session the **head chief** of the current project: the single point o
 ## Prerequisites
 
 - **Cross-session messaging** (`ListAgents` / `SendMessage`) — the feature this skill is built on (docs: `code.claude.com/docs` → "Message your other Claude Code sessions"). Verify with `ListAgents`; if unavailable, tell the user (needs Claude Code ≥ 2.1.224, macOS/Linux) and stop.
-- **Herdr** (`HERDR_ENV=1`) — required only for spawning/stopping sessions via the `cris-cc-session` skill. Without it the chief can still manage already-running sessions. Step 1 **surfaces** the exact project-settings allowlist entry for the herdr socket so lifecycle ops stop prompting on every call — it never edits settings itself.
+- **Herdr** (`HERDR_ENV=1`) — required only for spawning/stopping sessions via the `managed-session` skill. Without it the chief can still manage already-running sessions. Step 1 **surfaces** the exact project-settings allowlist entry for the herdr socket so lifecycle ops stop prompting on every call — it never edits settings itself.
 - **Ledger** at `<project-root>/.orchestrator/` — created by the init step below. (Idea doc spells it `.ochrestrator`; canonical path is `.orchestrator`.)
 
 ## Step 1: Become the chief (on `/head-chief` trigger)
@@ -59,8 +59,8 @@ For every subsequent user request, act per the chief system prompt:
 
 ## Step 3: Session lifecycle
 
-- **Spawn**: invoke the `cris-cc-session` skill (requires `HERDR_ENV=1`) with `--s-name <PROJECT>-<role>` (e.g. `mds-portal-fix`) and matching `--p-name`. Record the pane ID in the session's `status.md` — it's needed to stop the session later. A chief-spawned session is **in-project by construction**, so record its `project:`/`cwd:`/`ref:` at spawn (no probe needed). A freshly spawned session is **`PENDING_ACK`, not `ACTIVE`** (derived verdict): it becomes `ACTIVE` only once it (a) appears in `ListAgents` within this project **and** (b) writes a first ack line into its log (`oriented — rooted at <root>, brief read, starting`). **No un-acked session is handed further work.** If it fails to ack by the deadline (age via the `--now` helper), mark it **`SPAWN_FAILED`** and surface to the user. Once acked, send the new session its mission as a MAIN message.
-- **Stop**: confirm with the user, use `cris-cc-session`'s stop script with the recorded pane ID, mark the track `status: STOPPED`, and close any `PENDING` logs as `ABANDONED`.
+- **Spawn**: invoke the `managed-session` skill (requires `HERDR_ENV=1`) with `--s-name <PROJECT>-<role>` (e.g. `mds-portal-fix`) and matching `--p-name`. Record the pane ID in the session's `status.md` — it's needed to stop the session later. A chief-spawned session is **in-project by construction**, so record its `project:`/`cwd:`/`ref:` at spawn (no probe needed). A freshly spawned session is **`PENDING_ACK`, not `ACTIVE`** (derived verdict): it becomes `ACTIVE` only once it (a) appears in `ListAgents` within this project **and** (b) writes a first ack line into its log (`oriented — rooted at <root>, brief read, starting`). **No un-acked session is handed further work.** If it fails to ack by the deadline (age via the `--now` helper), mark it **`SPAWN_FAILED`** and surface to the user. Once acked, send the new session its mission as a MAIN message.
+- **Stop**: confirm with the user, use `managed-session`'s stop script with the recorded pane ID, mark the track `status: STOPPED`, and close any `PENDING` logs as `ABANDONED`.
 - Ledger files under `tracks/` are owned by the chief; staff sessions write only their answer sections inside `logs/` files. See `references/ledger-protocol.md` for layout, naming, statuses, and ownership rules.
 
 ## Step 4: Discussion mode (`/head-chief --discussion`)

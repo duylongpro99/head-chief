@@ -97,4 +97,4 @@ staff half of C2: STOP-on-ambiguity is the trigger that pairs with the chief's o
 
 ## Spawning-then-delegating
 
-When no existing session fits a MAIN request: spawn via `cris-cc-session` (`--s-name <project>-<role>`), create its track, then send the mission as a normal MAIN message. Give a new session its full context in the message + log (it shares no history with the chief).
+When no existing session fits a MAIN request: spawn via `managed-session` (`--s-name <project>-<role>`), create its track, then send the mission as a normal MAIN message. Give a new session its full context in the message + log (it shares no history with the chief).

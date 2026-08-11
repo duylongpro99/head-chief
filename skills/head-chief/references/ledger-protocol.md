@@ -125,7 +125,7 @@ a structural read instead of chief memory.
 
 One per managed session; see `assets/track-status-template.md`. Contains:
 
-- frontmatter: `session`, `ref` (the stable `[ref]` — **always address by this**, never the bare name; C8), `project` + `cwd` (recorded from the first-contact SIDECAR probe; **membership is confirmed here before any MAIN routing** — `ListAgents` returns no working dir, so membership must be probed, not assumed), `pane_id` (if chief spawned it via cris-cc-session), `status` (`ACTIVE`/`IDLE`/`STOPPED` — a hint, **not** the liveness source; see "Liveness is derived"), `last_confirmed_live` (helper-stamped UTC of the last time the session was seen in `ListAgents`; feeds the C5 board freshness), `created` (helper-stamped UTC — see **Timestamps & clock**)
+- frontmatter: `session`, `ref` (the stable `[ref]` — **always address by this**, never the bare name; C8), `project` + `cwd` (recorded from the first-contact SIDECAR probe; **membership is confirmed here before any MAIN routing** — `ListAgents` returns no working dir, so membership must be probed, not assumed), `pane_id` (if chief spawned it via managed-session), `status` (`ACTIVE`/`IDLE`/`STOPPED` — a hint, **not** the liveness source; see "Liveness is derived"), `last_confirmed_live` (helper-stamped UTC of the last time the session was seen in `ListAgents`; feeds the C5 board freshness), `created` (helper-stamped UTC — see **Timestamps & clock**)
 - `## Mission` — one paragraph, current assignment
 - `## Open loops` — chief-maintained checklist of this session's still-open delegations
   (`- [ ] <one-liner> — <log> — <derived-status>`); ticked/appended on every `DONE`/`BLOCKED` so

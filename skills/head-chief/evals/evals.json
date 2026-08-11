@@ -27,7 +27,7 @@
         {
             "id": 2,
             "prompt": "(as chief) Fix the failing unit tests in application-service.",
-            "expected_output": "Chief refuses to code itself; classifies as MAIN, picks or spawns a suitable staff session via cris-cc-session (e.g. --s-name mds-app-service-tests), writes the request log, and delegates with a [CHIEF→MAIN] message.",
+            "expected_output": "Chief refuses to code itself; classifies as MAIN, picks or spawns a suitable staff session via managed-session (e.g. --s-name mds-app-service-tests), writes the request log, and delegates with a [CHIEF→MAIN] message.",
             "files": [],
             "assertions": [
                 {"id": "assertion-1", "text": "Does not edit code or run the tests in the chief session"},
