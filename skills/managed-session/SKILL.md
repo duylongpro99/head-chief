@@ -1,6 +1,6 @@
 ---
 name: managed-session
-description: Use when asked to start, stop, or close a Claude Code coding session under Herdr (e.g. "start a managed-session", "open a new claude session", "stop that managed-session", "close its pane"). Creates a Herdr pane running `claude`, by default in a new tab in the current workspace; can also stop the session and close its pane. Requires HERDR_ENV=1.
+description: Use when asked to start, stop, or close a Claude Code coding session under Herdr (e.g. "start a managed-session", "open a new claude session", "stop that managed-session", "close its pane"). Creates a Herdr pane running `claude --dangerously-skip-permissions` (plain `claude` only if the user asks for permission prompts), by default in a new tab in the current workspace; can also stop the session and close its pane. Requires HERDR_ENV=1.
 ---
 
 # managed-session
@@ -29,17 +29,18 @@ If this fails, tell the user this isn't running inside Herdr and stop.
 ## Usage
 
 ```bash
-scripts/create-session.sh [--p-name PANE_LABEL] [--s-name SESSION_NAME] [--split-r | --split-d]
+scripts/create-session.sh [--p-name PANE_LABEL] [--s-name SESSION_NAME] [--split-r | --split-d] [--no-skip-perms]
 ```
 
 Resolve the script path relative to this `SKILL.md`.
 
 | Flag | Effect |
 | --- | --- |
-| *(none)* | Default: creates a new Herdr tab in the current workspace (`$HERDR_WORKSPACE_ID`) and starts `claude` in its pane, then focuses it. |
+| *(none)* | Default: creates a new Herdr tab in the current workspace (`$HERDR_WORKSPACE_ID`) and starts `claude --dangerously-skip-permissions` in its pane, then focuses it. |
 | `--split-r` | Splits the caller's current pane to the right in the active tab instead of creating a new tab, and starts `claude` there. |
 | `--split-d` | Same as `--split-r`, but splits down. |
 | `--p-name NAME` | Labels the new Herdr pane via `herdr pane rename` (a Herdr-level label, shown in sidebar/tab UI — separate from the agent's own session identity). |
+| `--no-skip-perms` | Launches plain `claude` without `--dangerously-skip-permissions`, so the session prompts for permissions normally. Pass this only when the user asks for permission prompts / a safe / non-bypass session. |
 | `--s-name NAME` | Passed as `claude --name NAME` on the launch command line, so the CLI sets its own session display name (prompt box, `/resume` picker, terminal title) from the start. |
 
 `--split-r` and `--split-d` are mutually exclusive; the script rejects both together.
@@ -56,6 +57,7 @@ Sends `/exit` into the pane so Claude Code quits on its own, then closes the pan
 
 ## Notes
 
+- Sessions start with `--dangerously-skip-permissions` by default, meaning the new Claude Code session runs tools without asking. Only add `--no-skip-perms` when the user explicitly asks for permission prompts (e.g. "with permissions", "safe mode", "don't skip permissions").
 - The script waits (up to 30s) for the new pane to reach Herdr's `idle` agent status before applying `--p-name`. A first-run Claude Code install with onboarding prompts (theme choice, trust dialog) can delay or prevent this — if `--p-name` doesn't apply, resolve the prompt yourself and rename the pane manually with `herdr pane rename <pane_id> NAME`.
 - `--s-name` is applied via `claude`'s own `--name` startup flag, not a post-launch `/rename` injection — this avoids a race where text typed into Claude Code's input box right after startup can land as a paste (embedded newline inserts a line instead of submitting), leaving the command sitting unsubmitted.
 - The create script prints the resulting pane and tab IDs on success. Use `herdr agent get <pane_id>`, `herdr pane read <pane_id> --source recent-unwrapped`, or the general `herdr` skill for anything beyond starting/naming/stopping the session.

@@ -17,6 +17,7 @@ fi
 p_name=""
 s_name=""
 split_dir=""
+skip_perms=1
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -29,6 +30,10 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { echo "--s-name requires a value" >&2; exit 2; }
       s_name="$2"
       shift 2
+      ;;
+    --no-skip-perms)
+      skip_perms=0
+      shift
       ;;
     --split-r)
       [ -z "$split_dir" ] || { echo "--split-r and --split-d are mutually exclusive" >&2; exit 2; }
@@ -63,6 +68,9 @@ else
 fi
 
 launch_cmd="$CLI_CMD"
+if [ "$skip_perms" = 1 ]; then
+  launch_cmd="$launch_cmd --dangerously-skip-permissions"
+fi
 if [ -n "$s_name" ]; then
   launch_cmd="$launch_cmd --name $(printf '%q' "$s_name")"
 fi
