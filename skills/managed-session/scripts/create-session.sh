@@ -16,6 +16,7 @@ fi
 
 p_name=""
 s_name=""
+model=""
 split_dir=""
 skip_perms=1
 
@@ -29,6 +30,11 @@ while [ "$#" -gt 0 ]; do
     --s-name)
       [ "$#" -ge 2 ] || { echo "--s-name requires a value" >&2; exit 2; }
       s_name="$2"
+      shift 2
+      ;;
+    --model)
+      [ "$#" -ge 2 ] || { echo "--model requires a value" >&2; exit 2; }
+      model="$2"
       shift 2
       ;;
     --no-skip-perms)
@@ -52,6 +58,27 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# Accept human-friendly names like "sonnet 5.5", "Opus-5.5", "claude haiku 4.5"
+# and turn them into model IDs (claude-sonnet-5-5). Aliases (sonnet, opus,
+# opusplan, sonnet[1m]) and full/provider IDs are passed through untouched.
+normalize_model() {
+  local raw lc
+  raw="$(printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  lc="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$lc" =~ ^(claude[[:space:]_-]*)?(opus|sonnet|haiku|fable)[[:space:]_-]*([0-9]+)([.-]([0-9]+))?$ ]]; then
+    local id="claude-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+    [ -z "${BASH_REMATCH[5]}" ] || id="$id-${BASH_REMATCH[5]}"
+    printf '%s' "$id"
+  else
+    printf '%s' "$raw"
+  fi
+}
+
+if [ -n "$model" ]; then
+  model="$(normalize_model "$model")"
+  [ -n "$model" ] || { echo "--model requires a non-empty value" >&2; exit 2; }
+fi
+
 if [ -z "${HERDR_WORKSPACE_ID:-}" ]; then
   echo "Missing HERDR_WORKSPACE_ID; is this really a Herdr-managed pane?" >&2
   exit 1
@@ -71,6 +98,9 @@ launch_cmd="$CLI_CMD"
 if [ "$skip_perms" = 1 ]; then
   launch_cmd="$launch_cmd --dangerously-skip-permissions"
 fi
+if [ -n "$model" ]; then
+  launch_cmd="$launch_cmd --model $(printf '%q' "$model")"
+fi
 if [ -n "$s_name" ]; then
   launch_cmd="$launch_cmd --name $(printf '%q' "$s_name")"
 fi
@@ -83,4 +113,4 @@ if [ -n "$p_name" ]; then
   herdr pane rename "$target_pane" "$p_name" >/dev/null
 fi
 
-echo "Started $CLI_LABEL in pane $target_pane (tab $target_tab)."
+echo "Started $CLI_LABEL${model:+ (model $model)} in pane $target_pane (tab $target_tab)."
