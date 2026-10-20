@@ -2,12 +2,13 @@
 
 **A Claude Code Agent Skill collection that turns one session into the head chief of your project** — the single point of contact between you and every other Claude Code session working in the same repo. It discovers sessions, spawns/stops them, classifies and routes your requests to the right session, and keeps a persistent, evidence-backed ledger of who is doing what.
 
-This repo ships **two skills** that work together:
+This repo ships **three skills** that work together:
 
 | Skill | Purpose |
 | --- | --- |
 | **`head-chief`** | The orchestrator persona: roster discovery, request classification + routing, the `.orchestrator/` ledger, consolidated reports, and discussion mode. |
 | **`managed-session`** | The lifecycle helper the chief uses to **spawn and stop** Claude Code sessions as Herdr panes. Requires `HERDR_ENV=1`. |
+| **`pr-review-loop`** | Review GitHub PRs with a separate session and loop review → verify/fix → re-review until approved. Cook mode (run by the implementer), reviewer mode (finds and wakes or restores the implementer session) and `--review-only`. Uses `managed-session` when installed. |
 
 > Distributed as [Agent Skills](https://skills.sh). Install them into Claude Code (or any of the 70+ supported agents) with the `skills` CLI.
 
@@ -86,6 +87,10 @@ skills/
   managed-session/
     SKILL.md               # Session lifecycle helper (Herdr)
     scripts/               # create-session.sh, stop-session.sh
+  pr-review-loop/
+    SKILL.md               # Cook / reviewer / review-only PR review loop
+    references/messages.md # Messages exchanged between the two sessions
+    scripts/               # session.sh (Herdr start/restore/compact/stop), find-implementer.py
 ```
 
 ## Development
@@ -101,5 +106,5 @@ python3 scripts/quick_validate.py        # structural validation (ownership, res
 `npx skills` resolves from GitHub, so publishing an update is just pushing to the default branch. Consumers pull the latest with:
 
 ```bash
-npx skills update head-chief managed-session
+npx skills update head-chief managed-session pr-review-loop
 ```

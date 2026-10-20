@@ -5,7 +5,7 @@
         {
             "title": "Session Orchestration",
             "description": "Turn one Claude Code session into the project's head chief and let it spawn, route, and manage every other session in the same repo.",
-            "skills": ["head-chief", "managed-session"]
+            "skills": ["head-chief", "managed-session", "pr-review-loop"]
         }
     ]
 }
