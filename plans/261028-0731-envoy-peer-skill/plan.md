@@ -105,7 +105,7 @@ Khớp 8 acceptance criteria của `docs/brainstorms/envoy.md`, kiểm ở Phase
 - [x] AC4: run dir có `brief.md`, `result.md`, `review-<n>.md`, `run.json`; brief thiếu acceptance criteria thì `check-brief.sh` chặn. Chứng minh: run `fix-greet` (grok) và `staged-findings` (agy) có đủ `result.md`, `review-<n>.md`, `run.json`.
 - [x] AC5: loop đến ACCEPT hoặc max rounds; message cuối chỉ gồm status, tóm tắt, số vòng, đường dẫn. Chứng minh: grok ACCEPT ở vòng 1; agy FINDINGS → sửa → ACCEPT ở vòng 2 (kịch bản dàn dựng, ghi rõ trong brief).
 - [x] AC6: cả hai pane đóng khi kết thúc kể cả lỗi; `cleanup.sh` dọn run bỏ dở.
-- [x] AC7: từ pane codex, `probe.sh list` loại trừ `codex`, chấp nhận `claude`. Chứng minh: từ pane codex, `controller` → `codex` và list loại trừ `codex`; grok tự chạy `probe.sh` trong pane của nó. Riêng codex tự chạy lệnh chưa được vì 9Router không chạy.
+- [x] AC7: từ pane codex, `probe.sh list` loại trừ `codex`, chấp nhận `claude`. Chứng minh: từ pane codex, `controller` → `codex` và list loại trừ `codex`; grok tự chạy `probe.sh` trong pane của nó. Riêng codex tự chạy lệnh chưa được: 9Router từ chối codex với `401 Missing API key` vì cấu hình provider của codex không truyền key; user chọn giữ nguyên cấu hình.
 - [x] AC8: `install.sh` tạo symlink, chạy lại không lỗi, `--uninstall` gỡ sạch.
 
 ## Rủi ro chính

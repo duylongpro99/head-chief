@@ -95,9 +95,20 @@ Observations, no change made:
 - On a CLI's first launch in a folder, `start.sh` can report ready before the CLI draws its trust or setup screen. `prompt-wait.sh` then either catches it as `blocked` before typing (claude) or reports `stalled` (grok, agy). In both cases the documented recovery (exit 4 or 6 → user → resend) completed the run.
 - The redaction filter masks 40-hex commit hashes in quoted lines (`git diff --stat [redacted]`). This is harmless, since the run ledger keeps the real SHA.
 
+## Codex rerun with 9Router running
+
+The user then started 9Router, which was listening on `127.0.0.1:20128`, and the controller ran codex as the envoy in `261028-2115-fix-greet-codex-3b8eba` (envoy codex `wC:p8Y`, reviewer claude).
+
+- `probe.sh auth codex` returned `ready`, the brief passed `check-brief.sh`, and `start.sh` returned exit 0 with the baseline recorded.
+- The round-1 prompt returned exit 7 (`result.md` missing) after 8 s, with the tree unchanged. The one re-prompt the skill allows returned exit 7 again after 6 s.
+- A bounded, redacted read of the pane's last 20 lines showed the cause: 9Router answered `401 Unauthorized: Missing API key` for `/v1/responses`. The `[model_providers.9router]` block of the codex config sets `name`, `base_url` and `wire_api`, but neither `env_key` nor `requires_openai_auth`, so codex sends no key to the router.
+- The run was set to `blocked`, and `cleanup.sh` closed its one pane. The pane list matched the list saved before the run, and the sandbox tree was unchanged.
+
+The user chose not to change the codex config. The skill handled a peer whose model calls fail as written: exit 7, one re-prompt, exit 7, blocked, cleanup.
+
 ## Not proven, and why
 
-- codex as a working envoy, or codex itself running the scripts: codex reaches its model only through the local 9Router proxy, which was not running. AC2 (dispatch with no question) and codex onboarding were still proven with codex.
+- codex as a working envoy, or codex itself running the scripts: with 9Router running, the router rejects codex's requests with `401 Missing API key`, because the codex provider config passes no key (see the codex rerun above). The user chose to leave that config as it is. AC2 (dispatch with no question) and codex onboarding were still proven with codex.
 - omp: no models configured.
 - The new review-template wording: not yet seen in a live review.
 - Exit 11 (`not ready` after start): not triggered by any installed kind.

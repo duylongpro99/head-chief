@@ -70,7 +70,7 @@ git status --short     # chỉ các file của skill, install.sh, README, skills
 - [x] `skills.sh.json` có envoy-peer
 - [x] `README.md` cập nhật bảng, install, layout, requirements, development, update; không còn "three skills"/"both"
 - [x] `evals/evals.json` ≥ 7 case (8 case)
-- [x] E2E AC1–AC8 có bằng chứng trong [report](../reports/tester-261028-1723-envoy-peer-e2e.md), gồm lần chạy lại live với grok và agy; pane list trước/sau khớp. `Status: DONE`; còn lại: codex chưa chạy được việc vì 9Router không chạy, omp chưa có model
+- [x] E2E AC1–AC8 có bằng chứng trong [report](../reports/tester-261028-1723-envoy-peer-e2e.md), gồm lần chạy lại live với grok và agy; pane list trước/sau khớp. `Status: DONE`; còn lại: codex chưa chạy được việc vì 9Router trả `401 Missing API key` (cấu hình provider của codex không truyền key, user chọn giữ nguyên), omp chưa có model
 - [x] Review diff bằng skill review trên host (10 findings, đã sửa và kiểm lại); grep secret chỉ còn 3 false positive ("Task-specific", 2 regex của `redact`)
 - [x] Không còn pane/run/tiến trình mồ côi do skill mở; chưa commit. Hai daemon `codex app-server` (PID 70857, 70885) do codex 0.165.0 tự cập nhật để lại, không bị kill
 
