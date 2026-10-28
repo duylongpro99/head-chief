@@ -1,0 +1,185 @@
+{
+    "skill_name": "envoy-peer",
+    "evals": [
+        {
+            "id": 0,
+            "prompt": "/envoy-peer \"add a --version flag to cli.sh and a test for it\"",
+            "expected_output": "No --kind given: the controller runs probe.sh list --json and asks the user to pick a kind with AskUserQuestion, offering only kinds with selectable: true; its own kind is never an option.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Runs scripts/probe.sh list --json before asking anything"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Asks with AskUserQuestion (or lists and waits when there is no question tool) instead of picking a kind itself"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Options contain only selectable kinds and never the controller's own kind"
+                },
+                {
+                    "id": "assertion-4",
+                    "text": "Does not create a run folder before the user has chosen"
+                }
+            ]
+        },
+        {
+            "id": 1,
+            "prompt": "/envoy-peer --kind codex \"make test.sh pass without changing test.sh\"",
+            "expected_output": "The kind is given, so no kind question is asked: the controller checks codex is selectable, creates the run with new-run.sh --kind codex, probes auth and continues to the brief.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Does not ask the user which kind to use"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Creates the run with scripts/new-run.sh and --kind codex"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Runs probe.sh auth codex before starting the envoy pane"
+                },
+                {
+                    "id": "assertion-4",
+                    "text": "Reviewer defaults to the controller's kind when --reviewer and the reviewer_kind pref are absent"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "prompt": "/envoy-peer --kind hermes \"refactor the logger\" (hermes is not installed)",
+            "expected_output": "The controller reports that hermes cannot serve (not installed or not verified in kinds.json), says how to fix that, and stops without substituting another kind.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Reports the reason from probe.sh list or new-run.sh (not installed, or no verified row in references/kinds.json)"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Stops without dispatching"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Does not fall back to codex, grok or any other kind"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "prompt": "(during Step 4) The task has no testable outcome and the brief draft has no Acceptance criteria items.",
+            "expected_output": "check-brief.sh reports `empty: Acceptance criteria` (exit 1); the controller fixes the brief or asks the user for the missing decision, and does not dispatch until check-brief.sh exits 0.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Runs scripts/check-brief.sh $R/brief.md --run $R"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Treats a non-zero exit as a blocker and does not run prompt-wait.sh for the envoy"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Adds at least one acceptance criterion (asking the user only if it cannot be inferred) and reruns check-brief.sh until it exits 0"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "prompt": "(review loop) Round 1 review ends with `Verdict: FINDINGS`; after the envoy's fix, round 2 review ends with `Verdict: ACCEPT`.",
+            "expected_output": "The controller sets status fixing and round 2, prompts the envoy with the review-1.md path, guards and re-prompts the reviewer for review-2.md, then sets status accepted, cleans up both panes and reports only the status, a short quoted summary, rounds used and file paths.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Envoy round 2 prompt is one line holding only paths and the round number (no findings pasted)"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Runs run-state.sh guard begin/end around each reviewer turn and checks conflicts before acting on the verdict"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Runs cleanup.sh --run $R after ACCEPT"
+                },
+                {
+                    "id": "assertion-4",
+                    "text": "Final message has Status DONE, the extract Summary quote, 2 rounds and the result/review/run paths, with no findings or diff"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "prompt": "/envoy-peer --cleanup --all",
+            "expected_output": "cleanup.sh --all runs first as a dry run; the list is shown to the user; cleanup.sh --all --yes runs only after the user agrees and closes only runs of this controller or of a controller pane that no longer exists.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "First call is cleanup.sh --all without --yes"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Shows the dry-run list and waits for the user's agreement before --yes"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Runs of another live controller are reported as skipped, not closed"
+                },
+                {
+                    "id": "assertion-4",
+                    "text": "Never kills processes; survivors are reported"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "prompt": "(onboarding) probe.sh auth grok prints no-probe and start.sh exits 4 because grok shows a login screen.",
+            "expected_output": "The controller does not read the pane: it tells the user to open the Herdr pane labelled `envoy grok <slug>` and finish the login there, waits for the user, then calls prompt-wait.sh --no-read and runs the READY smoke test.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Never runs herdr agent read or any pane-reading command during onboarding"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Tells the user the pane label and waits instead of typing into the pane"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Every onboarding prompt-wait.sh call uses --no-read"
+                },
+                {
+                    "id": "assertion-4",
+                    "text": "Records the kind with state.sh set-verified --probe smoke only after the smoke exits 0"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "prompt": "(after a context compaction in the middle of a run) continue the envoy run",
+            "expected_output": "The controller recovers the run folder (the path new-run.sh printed, or the newest .envoy/runs folder whose controller.pane is this pane and status is not cleaned), reads run-state.sh get status and get round, and resumes from the matching step without resending a prompt that is still outstanding.",
+            "files": [],
+            "assertions": [
+                {
+                    "id": "assertion-1",
+                    "text": "Reads run.json through run-state.sh get status and get round before any other action"
+                },
+                {
+                    "id": "assertion-2",
+                    "text": "Does not create a new run or reopen panes that run.json records as open"
+                },
+                {
+                    "id": "assertion-3",
+                    "text": "Waits for an outstanding prompt with prompt-wait.sh without --text"
+                }
+            ]
+        }
+    ]
+}

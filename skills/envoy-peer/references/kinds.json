@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "kinds": {
+    "codex": {
+      "binary": "codex",
+      "launch_args": ["--dangerously-bypass-approvals-and-sandbox"],
+      "model_flag": "--model",
+      "auth_probe": ["codex", "login", "status"],
+      "ready_jq": null,
+      "version_cmd": ["codex", "--version"],
+      "verified": {"date": "2026-10-28", "cli_version": "codex-cli 0.153.4", "method": "live --help"},
+      "notes": "login status prints a masked key on stdout; probe output is always discarded. Exit 0 when logged in, 1 with an empty CODEX_HOME (checked 2026-10-28)."
+    },
+    "claude": {
+      "binary": "claude",
+      "launch_args": ["--dangerously-skip-permissions"],
+      "model_flag": "--model",
+      "auth_probe": ["claude", "auth", "status", "--json"],
+      "ready_jq": ".loggedIn == true",
+      "version_cmd": ["claude", "--version"],
+      "verified": {"date": "2026-10-28", "cli_version": "2.1.312 (Claude Code)", "method": "live --help"},
+      "notes": "status JSON contains the account email; never print it"
+    },
+    "grok": {
+      "binary": "grok",
+      "launch_args": ["--permission-mode", "bypassPermissions"],
+      "model_flag": "--model",
+      "auth_probe": null,
+      "ready_jq": null,
+      "version_cmd": ["grok", "--version"],
+      "verified": {"date": "2026-10-28", "cli_version": "grok 0.2.101", "method": "live --help"},
+      "notes": "no status command (grok inspect --json only exposes loginPolicy); readiness is the smoke prompt"
+    },
+    "omp": {
+      "binary": "omp",
+      "launch_args": ["--approval-mode=yolo"],
+      "model_flag": "--model",
+      "auth_probe": null,
+      "ready_jq": null,
+      "version_cmd": ["omp", "--version"],
+      "verified": {"date": "2026-10-28", "cli_version": "omp/18.3.5", "method": "live --help"},
+      "notes": "no safe probe: omp token prints a secret, never call it; readiness is the smoke prompt"
+    },
+    "agy": {
+      "binary": "agy",
+      "launch_args": ["--dangerously-skip-permissions"],
+      "model_flag": "--model",
+      "auth_probe": null,
+      "ready_jq": null,
+      "version_cmd": ["agy", "--version"],
+      "verified": {"date": "2026-10-28", "cli_version": "1.1.21", "method": "live --help"},
+      "notes": "no login/status command; readiness is the smoke prompt"
+    },
+    "pi": {
+      "binary": "pi",
+      "launch_args": [],
+      "model_flag": "--model",
+      "auth_probe": null,
+      "ready_jq": null,
+      "version_cmd": ["pi", "--version"],
+      "verified": null,
+      "notes": "unverified: not installed on the author's machine. Candidate probe [\"pi\",\"auth\",\"check\",\"--provider\",\"<provider>\",\"--no-refresh\",\"--json\"] needs a default provider; --no-approve only trusts the project. Verify pi --help before setting verified."
+    },
+    "hermes": {
+      "binary": "hermes",
+      "launch_args": [],
+      "model_flag": "--model",
+      "auth_probe": null,
+      "ready_jq": null,
+      "version_cmd": ["hermes", "--version"],
+      "verified": null,
+      "notes": "unverified: not installed on the author's machine. Candidate full-permission flag --yolo comes from web sources only. Verify hermes --help before setting verified."
+    }
+  }
+}
