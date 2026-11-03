@@ -1,0 +1,65 @@
+{
+  "skill_name": "ui-paper-pencil-design",
+  "evals": [
+    {
+      "id": "restyle-landing-page",
+      "split": "train",
+      "prompt": "Restyle site/index.html in the paper and pencil storybook style, like statechart-art. Keep all the content.",
+      "expected_output": "The landing page uses the paper-pencil tokens, type and editorial layout; content, links and scripts are unchanged; the checker passes and the page was looked at at phone and desktop widths.",
+      "files": ["site/index.html"],
+      "assertions": [
+        {"id": "content-kept", "text": "Every heading, paragraph, link href and script from the original page is still present"},
+        {"id": "checker-clean", "text": "scripts/check_style.py reports 0 findings, or each remaining finding is listed with a reason"},
+        {"id": "one-red", "text": "No saturated colour other than --red and --green appears in page CSS"},
+        {"id": "no-upstream-fonts", "text": "The page does not load Kevin Serif or Kevin Sans"},
+        {"id": "rendered", "text": "The report states that the page was rendered at about 390px and 1280px, or says that rendering was unavailable"}
+      ]
+    },
+    {
+      "id": "draw-pipeline-plate",
+      "split": "train",
+      "prompt": "Add a hand-drawn coloured-pencil SVG plate to the page showing how a command goes from typed, to searched, to ranked, to shown, in that paper-and-pencil style.",
+      "expected_output": "An inline square SVG plate with every stage and step drawn as objects from one world, ink in two passes, pencil tints, labels on clean paper, arrows stopping short, and a caption with a red roman numeral.",
+      "files": [],
+      "assertions": [
+        {"id": "structure-complete", "text": "All four stages and the three steps between them appear as labelled elements in the SVG"},
+        {"id": "filters-used", "text": "The plate references pp-ink, pp-ink-b and pp-pencil from a single shared defs block"},
+        {"id": "readable", "text": "Plate text is at least 32 units in a 1080 viewBox and no label overlaps a line or another object"},
+        {"id": "accessible", "text": "The SVG has role=img with a title and a desc that lists the stages"},
+        {"id": "red-means-something", "text": "Red appears only on elements whose meaning the caption or a legend states"}
+      ]
+    },
+    {
+      "id": "audit-only",
+      "split": "holdout",
+      "prompt": "Does docs/index.html follow the paper-pencil style? Just tell me what is off, don't change anything.",
+      "expected_output": "A list of deviations from the invariants with file and line, using the checker plus a visual read, and no edits.",
+      "files": ["docs/index.html"],
+      "assertions": [
+        {"id": "no-edits", "text": "No file is modified"},
+        {"id": "uses-checker", "text": "Runs scripts/check_style.py and reports its findings"},
+        {"id": "beyond-lint", "text": "Also reports invariants the checker cannot see, such as typography, layout order or captions"}
+      ]
+    },
+    {
+      "id": "negative-generic-ui",
+      "split": "holdout",
+      "prompt": "Make our dashboard look modern with glassmorphism and gradient cards.",
+      "expected_output": "The skill does not activate; the request belongs to a general frontend design skill.",
+      "files": [],
+      "assertions": [
+        {"id": "not-routed", "text": "ui-paper-pencil-design is not selected for this request"}
+      ]
+    },
+    {
+      "id": "negative-raster-art",
+      "split": "holdout",
+      "prompt": "Generate a watercolour illustration PNG of a cat for my blog header.",
+      "expected_output": "The skill does not activate; raster image generation belongs to an image generation skill.",
+      "files": [],
+      "assertions": [
+        {"id": "not-routed", "text": "ui-paper-pencil-design is not selected for this request"}
+      ]
+    }
+  ]
+}

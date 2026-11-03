@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A cup of tea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@1,400&family=Cutive+Mono&family=Nunito+Sans:wght@400;700&display=swap">
+<link rel="stylesheet" href="paper-pencil.css">
+<style>
+  /* Plate text classes: SVG text uses the same faces as the page. */
+  .t-kicker { font: 400 30px var(--serif); fill: #1d1a1e; }
+  .t-title { font: 400 104px var(--serif); fill: #1d1a1e; }
+  .t-sub { font: italic 400 36px var(--italic); fill: #1d1a1e; }
+  .t-state { font: 400 40px var(--serif); fill: #1d1a1e; }
+  .t-step { font: italic 400 34px var(--italic); fill: #1d1a1e; }
+  .t-small { font: 400 15px var(--serif); fill: #b5453a; }
+</style>
+</head>
+<body>
+<!-- Shared filters and patterns: the same content as pencil-defs.svg. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- Ink, two passes: draw an outline once with pp-ink and again (lighter) with pp-ink-b.
+         The passes wander differently, which reads as a pen going over a line twice. -->
+    <filter id="pp-ink" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="2" seed="7" result="slow"/>
+      <feDisplacementMap in="SourceGraphic" in2="slow" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="pp-ink-b" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="2" seed="23" result="slow"/>
+      <feDisplacementMap in="SourceGraphic" in2="slow" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+
+    <!-- Pencil fill: colour broken up by paper tooth, nudged past its outline like a real pencil. -->
+    <filter id="pp-pencil" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.45 1.9" numOctaves="2" seed="11" result="grain"/>
+      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -3.2 2.3" result="holes"/>
+      <feComposite in="SourceGraphic" in2="holes" operator="in" result="grained"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="5" result="slow"/>
+      <feDisplacementMap in="grained" in2="slow" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+
+    <!-- Paper: faint warm fibre texture laid over the whole plate background. -->
+    <filter id="pp-paper" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" seed="2" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.36  0 0 0 0 0.30  0 0 0 0 0.22  0 0 0 0.10 0"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+      <feBlend in2="SourceGraphic" mode="multiply"/>
+    </filter>
+
+    <!-- Hatching for shadows and wood or metal grain. Rotate with patternTransform. -->
+    <pattern id="pp-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#5a5258" stroke-width="0.9" stroke-linecap="round"/>
+    </pattern>
+    <pattern id="pp-crosshatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <path d="M0 0V6M0 0H6" stroke="#5a5258" stroke-width="0.8"/>
+    </pattern>
+
+    <!-- Arrowheads: small open chevrons in ink and in red. Use with stroke paths that stop short. -->
+    <marker id="pp-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1 1.2 L8.6 5 L1 8.8" fill="none" stroke="#1d1a1e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="pp-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1 1.2 L8.6 5 L1 8.8" fill="none" stroke="#a8443b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+</svg>
+
+<main>
+  <header class="top">
+    <p class="kicker">a small example</p>
+    <h1>A cup of tea</h1>
+    <p class="lede">One chart about making tea, drawn as tags on a kitchen shelf. Each state is a paper tag, each step is a line of ink, and the one way it goes wrong is traced in red.</p>
+  </header>
+
+  <section class="plates">
+    <figure class="plate">
+      <svg viewBox="0 0 1080 1080" role="img" aria-labelledby="p1-title p1-desc">
+        <title id="p1-title">A cup of tea</title>
+        <desc id="p1-desc">Four states: cold kettle, boiling, steeping, in your cup. Steeping can go on too long, which leads to a bitter cup, shown in red.</desc>
+        <defs>
+          <path id="tag" d="M0 0 H340 V96 H0 Z"/>
+          <path id="kettle" d="M0 116 C0 40 30 10 90 10 C150 10 180 40 180 116 Z"/>
+        </defs>
+
+        <!-- paper -->
+        <rect width="1080" height="1080" fill="#f6f1e6" filter="url(#pp-paper)"/>
+
+        <!-- title block, top left -->
+        <text class="t-kicker" x="62" y="72">a small example · I</text>
+        <text class="t-title" x="56" y="170">A cup</text>
+        <text class="t-sub" x="62" y="222">from the kettle</text>
+        <text class="t-sub" x="62" y="262">to your hand</text>
+
+        <!-- shelf: ground line, hatched shadow under the kettle -->
+        <path d="M40 980 H1040" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/>
+        <ellipse cx="150" cy="984" rx="120" ry="9" fill="url(#pp-hatch)" opacity="0.8"/>
+
+        <!-- kettle spot art, bottom left: tint first, then two ink passes -->
+        <g transform="translate(60 862)">
+          <use href="#kettle" fill="#c4dbe8" filter="url(#pp-pencil)"/>
+          <g fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <g filter="url(#pp-ink)">
+              <use href="#kettle"/>
+              <path d="M178 72 C212 64 228 44 238 22"/>
+              <path d="M60 12 C60 -20 120 -20 120 12"/>
+              <path d="M-2 64 C-36 64 -36 30 4 34"/>
+            </g>
+            <use href="#kettle" filter="url(#pp-ink-b)" opacity="0.45"/>
+            <path d="M74 -42 c8 -12 -8 -22 0 -34 M104 -42 c8 -12 -8 -22 0 -34" stroke-width="1.6" filter="url(#pp-ink-b)"/>
+          </g>
+        </g>
+
+        <!-- states as paper tags: clean paper, pencil tint, two ink passes, a string hole -->
+        <g fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linejoin="round">
+          <g transform="translate(520 120)">
+            <use href="#tag" fill="#fbf7ee" stroke="none"/><use href="#tag" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/>
+            <use href="#tag" filter="url(#pp-ink)"/><use href="#tag" filter="url(#pp-ink-b)" opacity="0.45"/>
+            <circle cx="24" cy="48" r="7" stroke-width="2"/>
+            <text class="t-state" x="186" y="61" text-anchor="middle" stroke="none">cold kettle</text>
+          </g>
+          <g transform="translate(520 340)">
+            <use href="#tag" fill="#fbf7ee" stroke="none"/><use href="#tag" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/>
+            <use href="#tag" filter="url(#pp-ink)"/><use href="#tag" filter="url(#pp-ink-b)" opacity="0.45"/>
+            <circle cx="24" cy="48" r="7" stroke-width="2"/>
+            <text class="t-state" x="186" y="61" text-anchor="middle" stroke="none">boiling</text>
+          </g>
+          <g transform="translate(520 560)">
+            <use href="#tag" fill="#fbf7ee" stroke="none"/><use href="#tag" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/>
+            <use href="#tag" filter="url(#pp-ink)"/><use href="#tag" filter="url(#pp-ink-b)" opacity="0.45"/>
+            <circle cx="24" cy="48" r="7" stroke-width="2"/>
+            <text class="t-state" x="186" y="61" text-anchor="middle" stroke="none">steeping</text>
+          </g>
+          <g transform="translate(330 800)">
+            <use href="#tag" fill="#fbf7ee" stroke="none"/><use href="#tag" fill="#dcebf1" stroke="none" filter="url(#pp-pencil)"/>
+            <use href="#tag" filter="url(#pp-ink)"/><use href="#tag" filter="url(#pp-ink-b)" opacity="0.45"/>
+            <circle cx="24" cy="48" r="7" stroke-width="2"/>
+            <text class="t-state" x="186" y="61" text-anchor="middle" stroke="none">in your cup</text>
+          </g>
+          <!-- the state that breaks the rule: red tint and a red second outline -->
+          <g transform="translate(700 800)">
+            <use href="#tag" fill="#fbf7ee" stroke="none"/><use href="#tag" fill="#f2b9c2" stroke="none" filter="url(#pp-pencil)"/>
+            <use href="#tag" filter="url(#pp-ink)"/>
+            <path d="M-7 -7 H347 V103 H-7 Z" stroke="#a8443b" stroke-width="2" filter="url(#pp-ink-b)"/>
+            <text class="t-state" x="170" y="61" text-anchor="middle" stroke="none">a bitter cup</text>
+          </g>
+        </g>
+
+        <!-- steps: ink lines that stop short of each tag; labels beside them on clean paper -->
+        <g fill="none" stroke-width="2.4" stroke-linecap="round" filter="url(#pp-ink)">
+          <path d="M690 232 V326" stroke="#1d1a1e" marker-end="url(#pp-arrow)"/>
+          <path d="M690 452 V546" stroke="#1d1a1e" marker-end="url(#pp-arrow)"/>
+          <path d="M630 672 C630 730 510 730 500 786" stroke="#1d1a1e" marker-end="url(#pp-arrow)"/>
+          <path d="M760 672 C770 730 860 740 870 786" stroke="#a8443b" marker-end="url(#pp-arrow-red)"/>
+        </g>
+        <g paint-order="stroke" stroke="#f6f1e6" stroke-width="12" stroke-linejoin="round">
+          <text class="t-step" x="710" y="292">you switch it on</text>
+          <text class="t-step" x="710" y="512">you pour</text>
+          <text class="t-step" x="160" y="742">three minutes pass</text>
+          <text class="t-step" x="800" y="742">you forget it</text>
+        </g>
+
+        <!-- start dot -->
+        <circle cx="690" cy="64" r="16" fill="none" stroke="#1d1a1e" stroke-width="2.2" filter="url(#pp-ink)"/>
+        <circle cx="690" cy="64" r="9" fill="#a8443b"/>
+        <path d="M690 84 V108" stroke="#a8443b" stroke-width="2.4" stroke-linecap="round" marker-end="url(#pp-arrow-red)"/>
+      </svg>
+      <figcaption>
+        <span class="num">I</span><h2>A cup of tea</h2>
+        <p class="sub">from the kettle to your hand</p>
+        <p>A flat chart with a branch. The red line is the only way the tea goes wrong: nobody takes the bag out.</p>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="section">
+    <h2>How it was made</h2>
+    <ol class="steps">
+      <li><b>Pick the world.</b> Tea lives in a kitchen, so each state is a paper tag on a shelf.</li>
+      <li><b>Draw the structure.</b> Every state and step in the chart is on the plate, and nothing else is.</li>
+      <li><b>Keep red for meaning.</b> The broken path and the state it reaches are red; everything else is ink.</li>
+    </ol>
+    <ul class="rules">
+      <li class="holds"><span class="mark"></span><span>Every cup was steeped. <code>Steeped</code></span></li>
+      <li class="broken"><span class="mark"></span><span>No cup steeps longer than five minutes. <code>NotBitter</code></span></li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <p>Drawn in SVG with the ui-paper-pencil-design skill.</p>
+  </footer>
+</main>
+</body>
+</html>

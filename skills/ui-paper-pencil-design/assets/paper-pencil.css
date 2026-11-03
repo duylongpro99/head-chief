@@ -1,0 +1,93 @@
+/* paper-pencil.css — paper-and-pencil editorial page system.
+   Load fonts first:
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@1,400&family=Cutive+Mono&family=Nunito+Sans:wght@400;700&display=swap">
+*/
+
+:root {
+  --paper: #faf9f6;
+  --ink: #21201f;
+  --ink-2: #57534f;
+  --red: #933323;
+  --green: #2f6b3a;
+  --rule: #dcd8d0;
+  --code: #f2efe8;
+  --serif: "Cutive Mono", "Iowan Old Style", Georgia, serif;
+  --italic: "Courier Prime", "Iowan Old Style", Georgia, serif;
+  --sans: "Nunito Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 48px);
+  --measure: 46rem;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; border-radius: 0; }
+html { background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.6 var(--sans); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); }
+main { max-width: 1120px; margin: 0 auto; padding: 48px var(--gutter) 72px; }
+h1, h2, h3, h4 { font-family: var(--serif); font-weight: 400; line-height: 1.15; margin: 0; }
+p { margin: 0; text-wrap: pretty; }
+a { color: var(--red); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+a:focus-visible, button:focus-visible, pre:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+code { font-family: var(--mono); font-size: 0.88em; }
+img, svg { display: block; max-width: 100%; height: auto; }
+::selection { background: #ead9cf; }
+
+/* Title block */
+.top { max-width: var(--measure); }
+.kicker { font-weight: 700; letter-spacing: 0.06em; color: var(--ink-2); }
+.top h1 { margin-top: 6px; font-size: clamp(2.4rem, 7vw, 4.2rem); }
+.lede { margin-top: 18px; color: var(--ink-2); font-size: 1.125rem; }
+.repo { margin-top: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.repo a { font-weight: 700; display: inline-block; }
+
+/* Plates: captioned drawings in a 2-up / 1-up grid */
+.plates { margin-top: 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 56px 40px; }
+.plate { margin: 0; }
+.plate img, .plate > svg { width: 100%; box-shadow: 0 0 0 1px var(--rule); background: var(--paper); }
+.plate figcaption { margin-top: 14px; }
+.num { font-family: var(--serif); color: var(--red); margin-right: 0.35em; }
+.plate h2 { display: inline; font-size: 1.7rem; }
+.sub { font-family: var(--italic); font-style: italic; color: var(--ink-2); margin-top: 2px; }
+.plate figcaption p:last-child { margin-top: 8px; color: var(--ink-2); }
+
+/* Ruled sections */
+.section { margin-top: 88px; padding-top: 32px; border-top: 1px solid var(--rule); }
+.section > h2 { font-size: clamp(1.8rem, 4vw, 2.4rem); }
+.section > p { margin-top: 14px; max-width: var(--measure); }
+.steps { margin: 20px 0 0; padding-left: 1.4em; max-width: var(--measure); }
+.steps li { margin-top: 10px; padding-left: 4px; }
+.steps b { font-weight: 700; }
+.panel { margin-top: 20px; max-width: var(--measure); padding: 18px 20px; background: var(--code); }
+.panel h3 { font-size: 1.4rem; }
+.panel p { margin-top: 8px; }
+
+/* Rules that hold or break */
+.rules { list-style: none; margin: 14px 0 0; padding: 0; max-width: var(--measure); }
+.rules li { display: flex; gap: 10px; align-items: baseline; margin-top: 6px; }
+.rules .mark { flex: none; width: 1.1em; font-weight: 700; }
+.rules .holds .mark::before { content: "\2713"; color: var(--green); }
+.rules .broken .mark::before { content: "\2717"; color: var(--red); }
+.rules code { color: var(--ink-2); }
+
+/* Code and side-by-side figures */
+pre { margin: 0; padding: 14px 16px; max-height: 420px; overflow: auto; background: var(--code); font: 0.8rem/1.5 var(--mono); color: var(--ink); white-space: pre; }
+.row { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.row figure { margin: 0; min-width: 0; }
+.row figcaption { margin-top: 8px; font-size: 0.95rem; color: var(--ink-2); }
+
+/* Plain buttons: ink outline, square, red on focus */
+.button { display: inline-block; padding: 10px 18px; font: 700 1rem/1.2 var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--ink); text-decoration: none; cursor: pointer; }
+.button:hover { background: var(--code); }
+.button.primary { color: var(--paper); background: var(--ink); }
+.button.primary:hover { background: #3a3836; }
+
+.foot { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--rule); color: var(--ink-2); max-width: var(--measure); }
+
+@media (max-width: 720px) {
+  main { padding-top: 32px; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  pre { max-height: 320px; }
+}
