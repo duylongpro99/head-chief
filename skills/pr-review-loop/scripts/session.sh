@@ -56,7 +56,7 @@ case "$cmd" in
       pane=$(launch_tab "$PWD" --name "$name" "$@")
       herdr pane rename "$pane" "$name" >/dev/null 2>&1 || true
     fi
-    # create-session's own wait uses a flag herdr no longer accepts, so wait here.
+    # Re-check readiness so callers get this script's warning if a prompt blocks startup.
     herdr agent wait "$pane" --until idle --timeout 60000 >/dev/null 2>&1 \
       || echo "session.sh: pane $pane not idle after 60s (onboarding prompt?) — check it" >&2
     echo "$pane"
