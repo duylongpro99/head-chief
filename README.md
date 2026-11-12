@@ -7,7 +7,7 @@ This repo ships **four skills** that work together:
 | Skill | Purpose |
 | --- | --- |
 | **`head-chief`** | The orchestrator persona: roster discovery, request classification + routing, the `.orchestrator/` ledger, consolidated reports, and discussion mode. |
-| **`managed-session`** | The lifecycle helper the chief uses to **spawn and stop** Claude Code sessions as Herdr panes. Requires `HERDR_ENV=1`. |
+| **`managed-session`** | The lifecycle helper the chief uses to **spawn and stop** Claude Code sessions as Herdr panes (default, requires `HERDR_ENV=1`) or herdr core terminals (`--hc`, requires `hc`). Each session's auto-compact window defaults to 400k tokens (`--compact-window` to change it). |
 | **`pr-review-loop`** | Review GitHub PRs with a separate session and loop review → verify/fix → re-review until approved. Cook mode (run by the implementer), reviewer mode (finds and wakes or restores the implementer session) and `--review-only`. Uses `managed-session` when installed. |
 | **`envoy-peer`** | Hand one task with acceptance criteria to an agent CLI of another kind (codex, grok, omp, agy, …) in its own Herdr pane, let an independent reviewer pane check the work, and loop fix → re-review until accepted. Only the status, a short summary and file paths come back. Requires `HERDR_ENV=1`. |
 
