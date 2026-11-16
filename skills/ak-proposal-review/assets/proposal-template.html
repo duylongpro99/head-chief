@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{Tiêu đề đề xuất}}</title>
+<style>
+/* One 760px reading column; three colour roles (--c1 the proposal, --c2 the reader's input, --c3 neutral/tooling); feedback bar pinned to the bottom. No network requests: system fonts only. */
+:root {
+  --bg: #f3f6f5; --surface: #ffffff; --ink: #17232b; --muted: #5a6a72; --line: #d5dedc;
+  --c1: #0f6e6a; --c1-soft: #d9eeeb;
+  --c2: #a8500e; --c2-soft: #fbe8d3;
+  --c3: #4f5b78; --c3-soft: #e3e7f0;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10181c; --surface: #182329; --ink: #e6eeee; --muted: #9aaab0; --line: #2b3a41;
+    --c1: #5cc9c0; --c1-soft: #143b3a;
+    --c2: #f0a25a; --c2-soft: #46301a;
+    --c3: #a9b4d0; --c3-soft: #262d40;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 var(--font); }
+main { max-width: 760px; margin: 0 auto; padding: 48px 20px 180px; display: flex; flex-direction: column; gap: 56px; }
+section { scroll-margin-top: 16px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; text-wrap: balance; }
+h2 { font-size: 1.35rem; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 20px 0 4px; }
+p { margin: 0 0 12px; }
+a { color: var(--c1); }
+code { font: 0.86em var(--mono); background: var(--c3-soft); padding: 1px 5px; border-radius: 4px; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.note { font-size: 0.875rem; color: var(--muted); }
+ul.plain, ol.plain { margin: 0 0 12px; padding-left: 20px; }
+ul.plain li, ol.plain li { margin-bottom: 6px; }
+.toc { columns: 2; column-gap: 24px; margin: 0; padding-left: 20px; font-size: 0.9rem; }
+.toc li { margin-bottom: 4px; break-inside: avoid; }
+
+/* figures: every illustration sits in a .figure with a .cap caption */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin: 16px 0; }
+.figure > .cap { font-size: 0.8125rem; color: var(--muted); margin-top: 14px; }
+.c-1 { --c: var(--c1); --soft: var(--c1-soft); }
+.c-2 { --c: var(--c2); --soft: var(--c2-soft); }
+.c-3 { --c: var(--c3); --soft: var(--c3-soft); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.8125rem; color: var(--muted); margin-bottom: 14px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+
+/* glossary */
+dl.terms { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; font-size: 0.9rem; }
+dl.terms dt { font-weight: 600; }
+dl.terms dd { margin: 0; color: var(--muted); min-width: 0; }
+
+/* table */
+.tw { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* numbered flow: each step coloured by who or what does it */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; counter-reset: step; }
+.flow li { counter-increment: step; background: var(--soft); border-left: 4px solid var(--c); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.flow li::before { content: counter(step); font: 600 0.75rem var(--mono); color: var(--c); }
+.flow b { display: block; font-size: 0.9375rem; }
+.flow small { color: var(--muted); font-size: 0.8125rem; line-height: 1.45; display: block; }
+
+/* cards: a few parallel facts, roles or options */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.cards > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.cards b { display: block; margin-bottom: 2px; }
+
+/* before/after pair: used whenever a choice was rewritten after feedback */
+.change { border-top: 1px solid var(--line); padding: 18px 0; }
+.change:first-of-type { border-top: 0; padding-top: 4px; }
+.change h3 { margin-top: 0; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0; font-size: 0.9rem; }
+.pair > div { padding: 8px 10px; border-radius: 6px; min-width: 0; }
+.pair .old { border: 1px dashed var(--line); color: var(--muted); }
+.pair .new { background: var(--c1-soft); }
+.pair span { display: block; font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; margin-bottom: 2px; }
+
+/* file tree or command listing */
+pre.tree { font: 0.8125rem/1.7 var(--mono); margin: 0; overflow-x: auto; }
+pre.tree span { color: var(--muted); font-family: var(--font); }
+
+/* roadmap: phases sized by flex-grow set inline */
+.road { display: flex; gap: 4px; }
+.road > div { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 4px; background: var(--soft); border-bottom: 3px solid var(--c); font-size: 0.8125rem; }
+.road b { display: block; color: var(--c); }
+
+/* calculator */
+.calc label { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 0.9rem; margin-bottom: 12px; }
+.calc input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--c2); }
+.calc output { font: 600 0.9rem var(--mono); color: var(--c2); }
+.result { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.result strong { font: 700 2.2rem var(--mono); color: var(--c2); font-variant-numeric: tabular-nums; }
+
+/* feedback boxes, questions, bottom bar (built by the script) */
+.fb { margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--surface); }
+.fb .fb-h { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c2); font-weight: 600; margin-bottom: 8px; }
+.fb .verdicts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.fb button.v { font: inherit; font-size: 0.8125rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+.fb button.v[aria-pressed=true] { background: var(--c2); border-color: var(--c2); color: var(--bg); font-weight: 600; }
+textarea, input[type=text] { width: 100%; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+textarea { min-height: 64px; resize: vertical; display: block; }
+:focus-visible { outline: 2px solid var(--c2); outline-offset: 2px; }
+.q { border-top: 1px solid var(--line); padding: 18px 0; }
+.q:first-of-type { border-top: 0; }
+.q h3 { margin-top: 0; }
+.q .opts { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; font-size: 0.9rem; }
+.q label.rec { font-weight: 600; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding: 10px 20px; }
+.bar .in { max-width: 760px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.bar .count { font-size: 0.875rem; flex: 1 1 160px; }
+.bar button { font: inherit; font-size: 0.875rem; font-weight: 600; padding: 8px 14px; border-radius: 6px; cursor: pointer; border: 1px solid var(--c2); background: var(--c2); color: var(--bg); }
+.bar button.ghost { background: transparent; color: var(--c2); }
+.bar textarea { margin-top: 10px; min-height: 140px; font: 0.8125rem var(--mono); }
+
+@media (max-width: 560px) {
+  .toc { columns: 1; }
+  dl.terms { grid-template-columns: 1fr; gap: 2px; }
+  dl.terms dd { margin-bottom: 10px; }
+  .pair { grid-template-columns: 1fr; }
+  .road { flex-direction: column; }
+}
+</style>
+</head>
+<!-- TEMPLATE: data-slug is a kebab-case id used in the storage key and download name; data-name is the short proposal name shown in the export title; data-round starts at 1 and is only changed by `proposal_draft.py new-round`. -->
+<body data-slug="{{slug}}" data-name="{{Tên ngắn của đề xuất}}" data-round="1">
+<main>
+
+<header>
+  <!-- TEMPLATE: keep both data-round-label spans; new-round rewrites their numbers. -->
+  <div class="eyebrow">{{Dự án}} · đề xuất · bản <span data-round-label>1</span> · vòng góp ý <span data-round-label>1</span> · {{ngày}}</div>
+  <h1>{{Tiêu đề nói thẳng đề xuất là gì}}</h1>
+  <p class="lede">{{Hai ba câu tóm tắt đề xuất, đọc xong biết được đề nghị chính.}}</p>
+  <p class="note">Trang này tự đủ để đọc, bạn không cần mở tài liệu nào khác. Mỗi phần có ô góp ý, lưu ngay trong trình duyệt này. Khi xong, bấm <b>Sao chép góp ý</b> ở thanh dưới cùng rồi dán vào phiên làm việc; trang là file tĩnh nên tôi không tự đọc được góp ý của bạn.</p>
+  <ol class="toc">
+    <li><a href="#context">{{Bối cảnh}}</a></li>
+    <li><a href="#design">{{Thiết kế}}</a></li>
+    <li><a href="#choices">{{Các lựa chọn và lý do}}</a></li>
+    <li><a href="#numbers">{{Công cụ tính}}</a></li>
+    <li><a href="#unverified">Còn chưa kiểm chứng</a></li>
+    <li><a href="#questions">Câu hỏi cần bạn quyết</a></li>
+    <li><a href="#sources">Nguồn tham khảo</a></li>
+  </ol>
+</header>
+
+<!-- TEMPLATE: from round 2 on, uncomment-and-fill a section like the one below and add it first in the table of contents. See references/page-contract.md, "Changes and locked decisions".
+<section id="changes">
+  <h2>Thay đổi sau góp ý của bạn</h2>
+  <p>Vòng N bạn nêu K điểm. Mỗi điểm dưới đây đi kèm chỗ tôi đã sửa.</p>
+  <ul class="plain">
+    <li><b>Điểm bạn nêu, bằng lời của bạn.</b> Việc tôi đã sửa. Xem <a href="#design">tên phần</a>.</li>
+  </ul>
+  <h3 id="locked">Đã chốt</h3>
+  <ul class="plain">
+    <li><b>Chủ đề:</b> quyết định của bạn.</li>
+  </ul>
+  <div class="fb" data-id="changes" data-title="Thay đổi sau góp ý"></div>
+</section>
+-->
+
+<section id="context">
+  <h2>{{Bối cảnh}}</h2>
+  <p>{{Người đọc đang có gì, vấn đề là gì. Viết câu đầy đủ, giải thích thuật ngữ ở lần dùng đầu.}}</p>
+  <div class="figure">
+    <dl class="terms">
+      <dt>{{Thuật ngữ}}</dt><dd>{{Giải thích một câu.}}</dd>
+    </dl>
+    <div class="cap">{{Chú thích hình.}}</div>
+  </div>
+  <div class="fb" data-id="context" data-title="{{Bối cảnh}}"></div>
+</section>
+
+<section id="design">
+  <h2>{{Thiết kế}}</h2>
+  <p>{{Cơ chế hoạt động.}}</p>
+  <div class="figure">
+    <div class="legend"><span class="c-1">{{Vai 1}}</span><span class="c-2">{{Vai 2}}</span><span class="c-3">{{Vai 3}}</span></div>
+    <ol class="flow">
+      <li class="c-2"><b>{{Bước}}</b><small>{{Ai làm gì, ra kết quả gì.}}</small></li>
+      <li class="c-1"><b>{{Bước}}</b><small>{{Ai làm gì, ra kết quả gì.}}</small></li>
+      <li class="c-3"><b>{{Bước}}</b><small>{{Ai làm gì, ra kết quả gì.}}</small></li>
+    </ol>
+    <div class="cap">{{Hình mô tả đúng cơ chế và số liệu của đề xuất.}}</div>
+  </div>
+  <div class="figure">
+    <div class="tw"><table>
+      <tr><th>{{Cột}}</th><th>{{Cột}}</th></tr>
+      <tr><td>{{Ô}}</td><td>{{Ô}}</td></tr>
+    </table></div>
+  </div>
+  <div class="figure">
+<pre class="tree">{{thư-mục/}}
+  {{file}}        <span>{{file này để làm gì}}</span></pre>
+  </div>
+  <div class="figure">
+    <div class="road">
+      <div class="c-1" style="flex-grow:3"><b>{{Giai đoạn 1}}</b>{{Làm gì, xong khi nào.}}</div>
+      <div class="c-3" style="flex-grow:7"><b>{{Giai đoạn 2}}</b>{{Làm gì, xong khi nào.}}</div>
+    </div>
+  </div>
+  <div class="fb" data-id="design" data-title="{{Thiết kế}}"></div>
+</section>
+
+<section id="choices">
+  <h2>{{Các lựa chọn và lý do}}</h2>
+  <div class="change">
+    <h3>{{Lựa chọn}}</h3>
+    <p>{{Vì sao chọn, đặt cạnh phương án đã cân nhắc.}}</p>
+    <div class="pair">
+      <div class="old"><span>{{Phương án khác / bản trước}}</span>{{Mô tả.}}</div>
+      <div class="new"><span>{{Đề xuất / bản này}}</span>{{Mô tả.}}</div>
+    </div>
+    <div class="fb" data-id="c-one" data-title="Lựa chọn: {{tên lựa chọn}}"></div>
+  </div>
+  <div class="cards">
+    <div><b>{{Hướng đã loại}}</b>{{Lý do loại.}}</div>
+    <div><b>{{Rủi ro}}</b>{{Cách xử lý.}}</div>
+  </div>
+  <div class="fb" data-id="choices" data-title="{{Hướng đã loại và rủi ro}}"></div>
+</section>
+
+<!-- TEMPLATE: keep this section only when a number in the proposal depends on the reader's inputs; otherwise delete it, its table-of-contents line and the page-logic script. Fields inside data-export-group are exported under that title as "- label: value"; data-out elements export their text. -->
+<section id="numbers">
+  <h2>{{Công cụ tính}}</h2>
+  <p>{{Con số nào phụ thuộc vào đầu vào của bạn. Nói rõ giá trị ban đầu là giả định hay số đo.}}</p>
+  <div class="figure calc" data-export-group="{{Tên công cụ tính}}">
+    <label>{{Đầu vào A}} <output id="o-a"></output>
+      <input type="range" id="in-a" data-field="{{Đầu vào A}}" min="1" max="10" step="1" value="3"></label>
+    <label>{{Đầu vào B}} <output id="o-b"></output>
+      <input type="range" id="in-b" data-field="{{Đầu vào B}}" min="1" max="60" step="1" value="20"></label>
+    <div class="result"><strong id="res" data-out="{{Kết quả}}"></strong><span>{{đơn vị}}</span></div>
+    <p class="note" id="res-note"></p>
+  </div>
+  <div class="fb" data-id="numbers" data-title="{{Công cụ tính}}"></div>
+</section>
+
+<section id="unverified">
+  <h2>Còn chưa kiểm chứng</h2>
+  <ul class="plain">
+    <li>{{Điều tôi chưa chạy, chưa đo hoặc chưa xác nhận, và cách kiểm.}}</li>
+  </ul>
+  <div class="fb" data-id="unverified" data-title="Còn chưa kiểm chứng"></div>
+</section>
+
+<section id="questions">
+  <h2>Câu hỏi cần bạn quyết</h2>
+  <!-- TEMPLATE: one .q per decision. data-label is the line label in the export. Exactly one option carries class "rec" and the text "(tôi khuyên)"; the note says why. Radio value is the short text that appears in the export. An optional free-text field inside the .q needs an id and data-field. -->
+  <div class="q" data-label="{{Nhãn ngắn của câu hỏi}}">
+    <h3>{{Câu hỏi?}}</h3>
+    <p class="note">{{Vì sao tôi cần bạn quyết, và vì sao tôi khuyên phương án đầu.}}</p>
+    <div class="opts">
+      <label class="rec"><input type="radio" name="q-one" value="{{Phương án A}}"> {{Phương án A, hệ quả}} (tôi khuyên)</label>
+      <label><input type="radio" name="q-one" value="{{Phương án B}}"> {{Phương án B, hệ quả}}</label>
+    </div>
+    <input type="text" id="q-one-other" data-field="{{Nhãn ngắn của câu hỏi}}" placeholder="Hoặc ghi câu trả lời của bạn">
+  </div>
+  <h3>Còn điều gì tôi bỏ sót?</h3>
+  <textarea id="general" data-field="Điều còn thiếu" placeholder="Ý kiến không thuộc phần nào ở trên"></textarea>
+</section>
+
+<section id="sources">
+  <h2>Nguồn tham khảo</h2>
+  <h3>{{Chủ đề}}</h3>
+  <ul class="plain">
+    <li><a href="{{https://nguon}}">{{Tên nguồn}}</a>: {{nguồn này chứng minh điều gì.}}</li>
+  </ul>
+</section>
+
+</main>
+
+<!-- TEMPLATE: page-specific logic lives here and only here. It recomputes on "review:change", which the core script fires after restoring saved values and after every input. Delete this script when the page has no calculator. -->
+<script id="page-logic">
+document.addEventListener('review:change', function () {
+  var a = +document.getElementById('in-a').value, b = +document.getElementById('in-b').value;
+  document.getElementById('o-a').textContent = a;
+  document.getElementById('o-b').textContent = b;
+  document.getElementById('res').textContent = (a * b).toLocaleString('vi-VN');
+  document.getElementById('res-note').textContent = '';
+});
+</script>
+
+<!-- Core feedback script. Driven by the markup contract in references/page-contract.md; it holds no page-specific ids, so it stays byte-identical across rounds and proposals. -->
+<script id="review-core">
+(function () {
+  var D = document.body.dataset;
+  var ROUND = D.round, SLUG = D.slug, NAME = D.name;
+  var KEY = SLUG + '-feedback-v' + ROUND;
+  var FILE = SLUG + '-feedback-v' + ROUND + '.md';
+  var LANG = (document.documentElement.lang || 'vi').slice(0, 2);
+  var T = {
+    vi: {
+      verdicts: ['Đồng ý', 'Cần bàn thêm', 'Không đồng ý'], boxTitle: 'Góp ý của bạn',
+      notePh: 'Ghi chú, câu hỏi hoặc phản biện', noteAria: 'Góp ý: ',
+      verdict: 'Đánh giá', note: 'Ghi chú', answers: 'Câu trả lời', unanswered: '(chưa chọn)',
+      title: function () { return '# Góp ý vòng ' + ROUND + ' cho đề xuất ' + NAME; }, date: 'Ngày', locale: 'vi-VN',
+      none: 'Chưa có góp ý nào',
+      some: function (n) { return 'Đã có ' + n + ' mục góp ý, lưu trong trình duyệt này'; },
+      copy: 'Sao chép góp ý', download: 'Tải file .md', clear: 'Xoá hết', clearArm: 'Bấm lần nữa để xoá',
+      copied: 'Đã sao chép. Dán vào phiên làm việc để thảo luận tiếp.',
+      manual: 'Không sao chép tự động được. Nội dung đã được chọn sẵn, hãy tự sao chép.',
+      saved: 'Đã tải ', fallbackAria: 'Nội dung góp ý để sao chép'
+    },
+    en: {
+      verdicts: ['Agree', 'Needs discussion', 'Disagree'], boxTitle: 'Your feedback',
+      notePh: 'Notes, questions or objections', noteAria: 'Feedback: ',
+      verdict: 'Verdict', note: 'Note', answers: 'Answers', unanswered: '(not answered)',
+      title: function () { return '# Feedback round ' + ROUND + ' on proposal ' + NAME; }, date: 'Date', locale: 'en-GB',
+      none: 'No feedback yet',
+      some: function (n) { return n + ' feedback item(s), saved in this browser'; },
+      copy: 'Copy feedback', download: 'Download .md', clear: 'Clear all', clearArm: 'Click again to clear',
+      copied: 'Copied. Paste it into the working session to continue.',
+      manual: 'Automatic copy failed. The text is selected; copy it yourself.',
+      saved: 'Downloaded ', fallbackAria: 'Feedback text to copy'
+    }
+  };
+  T = T[LANG] || T.vi;
+
+  function all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+
+  var state = { fb: {}, fields: {}, radios: {} };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY));
+    if (saved) Object.keys(state).forEach(function (k) { if (saved[k]) state[k] = saved[k]; });
+  } catch (e) {}
+  function changed() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    updateCount();
+    document.dispatchEvent(new CustomEvent('review:change'));
+  }
+
+  // Feedback boxes
+  var boxes = all('.fb');
+  boxes.forEach(function (box) {
+    var id = box.dataset.id;
+    var cur = state.fb[id] || (state.fb[id] = { verdict: '', note: '' });
+    var row = el('div', 'verdicts');
+    T.verdicts.forEach(function (v) {
+      var b = el('button', 'v', v);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(cur.verdict === v));
+      b.addEventListener('click', function () {
+        cur.verdict = cur.verdict === v ? '' : v;
+        all('button', row).forEach(function (c) { c.setAttribute('aria-pressed', String(c.textContent === cur.verdict)); });
+        changed();
+      });
+      row.appendChild(b);
+    });
+    var ta = el('textarea');
+    ta.id = 'fb-' + id; ta.placeholder = T.notePh; ta.value = cur.note;
+    ta.setAttribute('aria-label', T.noteAria + box.dataset.title);
+    ta.addEventListener('input', function () { cur.note = ta.value; changed(); });
+    box.appendChild(el('div', 'fb-h', T.boxTitle)); box.appendChild(row); box.appendChild(ta);
+  });
+
+  // Fields and radios
+  var fields = all('[data-field]');
+  fields.forEach(function (f) {
+    if (state.fields[f.id] != null) f.value = state.fields[f.id];
+    f.addEventListener('input', function () { state.fields[f.id] = f.value; changed(); });
+  });
+  all('.q input[type=radio]').forEach(function (r) {
+    r.checked = state.radios[r.name] === r.value;
+    r.addEventListener('change', function () { state.radios[r.name] = r.value; changed(); });
+  });
+  var questions = all('.q');
+  var groups = all('[data-export-group]');
+  var loose = fields.filter(function (f) { return !f.closest('.q') && !f.closest('[data-export-group]'); });
+
+  function answer(q) {
+    var r = q.querySelector('input[type=radio]');
+    var picked = r ? (state.radios[r.name] || '') : '';
+    var free = all('[data-field]', q).map(function (f) { return f.value.trim(); }).filter(Boolean).join(' / ');
+    return picked && free ? picked + ' — ' + free : picked || free;
+  }
+  function fbTouched(b) { var f = state.fb[b.dataset.id]; return f.verdict || f.note.trim(); }
+
+  function build() {
+    var out = [T.title(), '', T.date + ': ' + new Date().toLocaleString(T.locale), ''];
+    boxes.filter(fbTouched).forEach(function (b) {
+      var f = state.fb[b.dataset.id];
+      out.push('## ' + b.dataset.title);
+      if (f.verdict) out.push('- ' + T.verdict + ': ' + f.verdict);
+      if (f.note.trim()) out.push('- ' + T.note + ': ' + f.note.trim());
+      out.push('');
+    });
+    groups.forEach(function (g) {
+      out.push('## ' + g.dataset.exportGroup);
+      all('[data-field]', g).forEach(function (f) { out.push('- ' + f.dataset.field + ': ' + f.value); });
+      all('[data-out]', g).forEach(function (o) { out.push('- ' + o.dataset.out + ': ' + o.textContent.trim()); });
+      out.push('');
+    });
+    if (questions.length) {
+      out.push('## ' + T.answers);
+      questions.forEach(function (q) { out.push('- ' + q.dataset.label + ': ' + (answer(q) || T.unanswered)); });
+      out.push('');
+    }
+    loose.forEach(function (f) {
+      if (f.value.trim()) out.push('## ' + f.dataset.field, f.value.trim(), '');
+    });
+    return out.join('\n');
+  }
+
+  // Bottom bar
+  var bar = el('div', 'bar'), row1 = el('div', 'in'), row2 = el('div', 'in');
+  var count = el('span', 'count'), copy = el('button', '', T.copy), download = el('button', 'ghost', T.download), clear = el('button', 'ghost', T.clear);
+  var fallback = el('textarea');
+  [copy, download, clear].forEach(function (b) { b.type = 'button'; });
+  fallback.hidden = true; fallback.readOnly = true; fallback.setAttribute('aria-label', T.fallbackAria);
+  row1.appendChild(count); row1.appendChild(copy); row1.appendChild(download); row1.appendChild(clear);
+  row2.appendChild(fallback); bar.appendChild(row1); bar.appendChild(row2); document.body.appendChild(bar);
+
+  function updateCount() {
+    var n = boxes.filter(fbTouched).length + questions.filter(answer).length +
+      loose.filter(function (f) { return f.value.trim(); }).length;
+    count.textContent = n ? T.some(n) : T.none;
+  }
+  function showFallback(text) {
+    fallback.hidden = false; fallback.value = text; fallback.focus(); fallback.select();
+    count.textContent = T.manual;
+  }
+  copy.addEventListener('click', function () {
+    var text = build();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { count.textContent = T.copied; }, function () { showFallback(text); });
+    } else { showFallback(text); }
+  });
+  download.addEventListener('click', function () {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([build()], { type: 'text/markdown' }));
+    a.download = FILE;
+    document.body.appendChild(a); a.click(); a.remove();
+    count.textContent = T.saved + FILE;
+  });
+  var armed = false;
+  clear.addEventListener('click', function () {
+    if (!armed) {
+      armed = true; clear.textContent = T.clearArm;
+      setTimeout(function () { armed = false; clear.textContent = T.clear; }, 3000);
+      return;
+    }
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    location.reload();
+  });
+
+  updateCount();
+  document.dispatchEvent(new CustomEvent('review:change'));
+})();
+</script>
+</body>
+</html>
