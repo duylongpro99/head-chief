@@ -7,6 +7,7 @@ CLI_LABEL="Claude Code"
 DEFAULT_COMPACT_WINDOW=400000
 
 p_name=""
+t_name=""
 s_name=""
 model=""
 split_dir=""
@@ -19,6 +20,11 @@ while [ "$#" -gt 0 ]; do
     --p-name)
       [ "$#" -ge 2 ] || { echo "--p-name requires a value" >&2; exit 2; }
       p_name="$2"
+      shift 2
+      ;;
+    --t-name)
+      [ "$#" -ge 2 ] || { echo "--t-name requires a value" >&2; exit 2; }
+      t_name="$2"
       shift 2
       ;;
     --s-name)
@@ -61,7 +67,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ -n "$t_name" ] && [ -n "$split_dir" ]; then
+  echo "--t-name only applies to a new tab; it can't be combined with --split-r/--split-d" >&2
+  exit 2
+fi
+
 if [ "$backend" = "hc" ]; then
+  [ -z "$t_name" ] || { echo "--t-name is Herdr-only; hc terminals have no tabs (use --p-name for the hc terminal name)" >&2; exit 2; }
   [ -z "$split_dir" ] || { echo "--split-r/--split-d are Herdr-only; hc terminals have no panes to split" >&2; exit 2; }
   command -v hc >/dev/null 2>&1 || { echo "'hc' (herdr core) was not found on PATH." >&2; exit 1; }
 elif [ "${HERDR_ENV:-}" != "1" ]; then
@@ -142,6 +154,7 @@ if [ "$backend" = "hc" ]; then
   exit 0
 fi
 
+tab_label=""
 if [ -z "${HERDR_WORKSPACE_ID:-}" ]; then
   echo "Missing HERDR_WORKSPACE_ID; is this really a Herdr-managed pane?" >&2
   exit 1
@@ -152,7 +165,12 @@ if [ -n "$split_dir" ]; then
   target_pane=$(printf '%s' "$split_json" | jq -r '.result.pane.pane_id')
   target_tab="${HERDR_TAB_ID:-}"
 else
-  tab_json=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --focus)
+  # Without a label Herdr names the tab by its index number, so label it with
+  # its purpose: --t-name, else the session name, else the pane label.
+  tab_label="${t_name:-${s_name:-$p_name}}"
+  tab_args=(--workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --focus)
+  [ -z "$tab_label" ] || tab_args+=(--label "$tab_label")
+  tab_json=$(herdr tab create "${tab_args[@]}")
   target_pane=$(printf '%s' "$tab_json" | jq -r '.result.root_pane.pane_id')
   target_tab=$(printf '%s' "$tab_json" | jq -r '.result.tab.tab_id')
 fi
@@ -183,4 +201,4 @@ if [ -n "$p_name" ]; then
   herdr pane rename "$target_pane" "$p_name" >/dev/null
 fi
 
-echo "Started $CLI_LABEL${model:+ (model $model)} in pane $target_pane (tab $target_tab), auto-compact window $compact_tokens tokens."
+echo "Started $CLI_LABEL${model:+ (model $model)} in pane $target_pane (tab $target_tab${tab_label:+ \"$tab_label\"}), auto-compact window $compact_tokens tokens."

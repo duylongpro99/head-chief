@@ -1,6 +1,6 @@
 ---
 name: managed-session
-description: Use when asked to start, stop, or close a Claude Code coding session under Herdr or herdr core / hc (e.g. "start a managed-session", "open a new claude session", "start a session with sonnet 5.5", "start a session with hc", "auto compact at 300k", "stop that managed-session", "close its pane"). Creates a Herdr pane (default, new tab in the current workspace) or an hc terminal (`--hc`) running `claude --dangerously-skip-permissions` (plain `claude` only if the user asks for permission prompts) with the auto-compact window set to 400k tokens unless overridden; can also stop the session and close its pane/terminal. Herdr mode requires HERDR_ENV=1; hc mode requires `hc` on PATH.
+description: Use when asked to start, stop, or close a Claude Code coding session under Herdr or herdr core / hc (e.g. "start a managed-session", "open a new claude session", "start a session with sonnet 5.5", "start a session with hc", "auto compact at 300k", "stop that managed-session", "close its pane", "open a tab for the auth refactor"). Creates a Herdr pane (default, new tab in the current workspace) or an hc terminal (`--hc`) running `claude --dangerously-skip-permissions` (plain `claude` only if the user asks for permission prompts) with the auto-compact window set to 400k tokens unless overridden; can also stop the session and close its pane/terminal. Herdr mode requires HERDR_ENV=1; hc mode requires `hc` on PATH.
 ---
 
 # managed-session
@@ -13,7 +13,7 @@ Sibling skill `cx-session` does the same thing for Codex (`codex` instead of `cl
 
 ## When to Use
 
-- Use when the user asks to start, open, or spin up a new Claude Code / "cc" session — optionally naming the pane, renaming the session itself, picking the model, choosing where it's placed (new tab vs. split in the active tab), running it under herdr core (`hc`) instead of Herdr, or changing the auto-compact threshold.
+- Use when the user asks to start, open, or spin up a new Claude Code / "cc" session — optionally naming the tab, naming the pane, renaming the session itself, picking the model, choosing where it's placed (new tab vs. split in the active tab), running it under herdr core (`hc`) instead of Herdr, or changing the auto-compact threshold.
 - Use when the user asks to stop, kill, or close a `managed-session` pane or hc terminal.
 
 ## Before running
@@ -23,10 +23,14 @@ Pick the backend. Herdr is the default; use `--hc` only when the user asks for h
 - Herdr: verify `test "${HERDR_ENV:-}" = 1`. If this fails, tell the user this isn't running inside Herdr and offer `--hc` instead.
 - hc: verify `command -v hc`. hc doesn't need `HERDR_ENV`.
 
+## Naming the tab
+
+In the default new-tab mode, always pass `--t-name` with a label that says what the tab is for, so the tab bar isn't a row of index numbers. Use the name the user gives; otherwise derive one from the session's purpose in the request: 1–4 words, lowercase kebab-case, reusing the user's own words (e.g. "open a session to review PR 42" → `--t-name pr-42-review`; "start a session to fix the login bug" → `--t-name fix-login-bug`). Only when the request carries no purpose at all, omit it and let the `--s-name`/`--p-name` fallback apply. To rename later: `herdr tab rename <tab_id> NAME`.
+
 ## Usage
 
 ```bash
-scripts/create-session.sh [--hc] [--p-name PANE_LABEL] [--s-name SESSION_NAME] [--model MODEL] [--compact-window TOKENS] [--split-r | --split-d] [--no-skip-perms]
+scripts/create-session.sh [--hc] [--t-name TAB_LABEL] [--p-name PANE_LABEL] [--s-name SESSION_NAME] [--model MODEL] [--compact-window TOKENS] [--split-r | --split-d] [--no-skip-perms]
 ```
 
 Resolve the script path relative to this `SKILL.md`.
@@ -34,6 +38,7 @@ Resolve the script path relative to this `SKILL.md`.
 | Flag | Effect |
 | --- | --- |
 | *(none)* | Default: creates a new Herdr tab in the current workspace (`$HERDR_WORKSPACE_ID`) and starts `claude --dangerously-skip-permissions` in its pane, then focuses it. |
+| `--t-name NAME` | (Herdr new-tab mode only) Labels the new tab via `herdr tab create --label`. Without any name Herdr shows the tab's index number, so when this is omitted the script falls back to `--s-name`, then `--p-name`. Rejected with `--split-r`/`--split-d` (the session joins the caller's existing tab) and with `--hc` (no tabs). |
 | `--hc` | Starts the session as a herdr core terminal with `hc run --bg --outlive-parent --cwd "$PWD" --label managed-session=claude` instead of a Herdr pane. It survives the caller's exit, and you attach with `hc attach <t>`. It can't be combined with `--split-r`/`--split-d`. |
 | `--compact-window TOKENS` | Auto-compact window for the new session, default `400000`. Accepts `400000`, `400k` or `1m`, from 100k to 1m. Applied as `claude --settings '{"autoCompactWindow":N}'`. |
 | `--split-r` | (Herdr only) Splits the caller's current pane to the right in the active tab instead of creating a new tab, and starts `claude` there. |
@@ -45,7 +50,7 @@ Resolve the script path relative to this `SKILL.md`.
 
 `--split-r` and `--split-d` are mutually exclusive; the script rejects both together.
 
-`create-session.sh` prints what it started. Herdr: `Started Claude Code in pane w8:p0 (tab w8:tE), auto-compact window 400000 tokens.` hc: `Started Claude Code in hc terminal t4 (name x), auto-compact window 400000 tokens. Attach with: hc attach t4`. That pane ID or terminal address (or hc name) is what `stop-session.sh` below takes.
+`create-session.sh` prints what it started. Herdr: `Started Claude Code in pane w8:p0 (tab w8:tE "fix-login-bug"), auto-compact window 400000 tokens.` hc: `Started Claude Code in hc terminal t4 (name x), auto-compact window 400000 tokens. Attach with: hc attach t4`. That pane ID or terminal address (or hc name) is what `stop-session.sh` below takes.
 
 ### Stopping a session
 
