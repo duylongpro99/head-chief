@@ -14,14 +14,16 @@
 #   Run it with run_in_background so its exit wakes the supervisor.
 #   --tab defaults to the tab of `herdr pane current`; --base-label overrides the label read
 #   with `herdr tab get`.
+#   When started under a Claude Code process, it exits with "pending-watch: owner gone" once
+#   that process is gone, so a crashed or closed session leaves no watcher behind.
 # line: exits 2 on a malformed "## D" header.
 #
-# State lives in <dir>/.pending-state/ (hash, pid, tab, base-label, notified/<Dn>).
+# State lives in <dir>/.pending-state/ (hash, pid, owner, tab, base-label, notified/<Dn>).
 # This script never writes pending-decisions.md.
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 POLL="${PENDING_POLL_SECONDS:-5}"
 RENOTIFY="${PENDING_RENOTIFY_SECONDS:-1800}"
@@ -95,6 +97,22 @@ restore_label() {
   if [ -f "$STATE/tab" ] && [ -f "$STATE/base-label" ]; then
     herdr tab rename "$(cat "$STATE/tab")" "$(cat "$STATE/base-label")" >/dev/null 2>&1 || true
   fi
+}
+
+# True when one of the first two words of the process's command is named "claude"
+# ("claude --flags", or "bash /path/claude" for a script).
+is_claude() {
+  ps -o command= -p "$1" 2>/dev/null \
+    | awk '{ for (i = 1; i <= 2 && i <= NF; i++) { n = $i; sub(/.*\//, "", n); if (n == "claude") f = 1 } } END { exit !f }'
+}
+
+# Nearest Claude Code ancestor of this watcher, or nothing when started by hand.
+find_owner() {
+  local p="$PPID"
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    if is_claude "$p"; then echo "$p"; return 0; fi
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
 }
 
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p" | head -n 1; }
@@ -180,6 +198,9 @@ cmd_watch() {
   printf '%s' "$base" > "$STATE/base-label"
   echo "$$" > "$STATE/pid"
   [ -f "$STATE/hash" ] || ledger_hash > "$STATE/hash"
+  local owner
+  owner="$(find_owner)" || true
+  printf '%s' "$owner" > "$STATE/owner"
 
   local sleeper=""
   on_exit() {
@@ -191,9 +212,13 @@ cmd_watch() {
   trap 'exit 143' TERM
   trap 'exit 130' INT
 
-  echo "pending-watch: watching $LEDGER (tab $tab, base label '$base', pid $$)"
+  echo "pending-watch: watching $LEDGER (tab $tab, base label '$base', pid $$, owner ${owner:-none})"
   local label="" candidate="" warned="" h now id q last n new_label records bad
   while :; do
+    if [ -n "$owner" ] && ! { kill -0 "$owner" 2>/dev/null && is_claude "$owner"; }; then
+      echo "pending-watch: owner gone (pid $owner)"
+      exit 0
+    fi
     h="$(ledger_hash)"
     if [ "$h" != "$(cat "$STATE/hash" 2>/dev/null)" ]; then
       if [ -n "$candidate" ] && [ "$h" = "$candidate" ]; then

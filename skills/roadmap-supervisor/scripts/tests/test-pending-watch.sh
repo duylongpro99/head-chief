@@ -164,5 +164,23 @@ if line="$("$SCRIPT" line "$D" 2>&1)" && printf '%s' "$line" | grep -qF "⏳ 1 �
   ok "CRLF ledger parses"
 else fail "CRLF ledger parses" "line='$line'"; fi
 
+# 11. The watcher exits when the Claude process that started it is gone.
+total=$((total + 1)); new_case owner-gone
+item 1 OPEN ' ' '' | sup_write
+printf '#!/usr/bin/env bash\n"$@" &\nwait\n' > "$ROOT/bin/claude"; chmod +x "$ROOT/bin/claude"
+"$ROOT/bin/claude" "$SCRIPT" watch "$D" > "$D/watch.out" 2>&1 &
+owner=$!
+wait_for 5 test -s "$D/.pending-state/owner"
+WPID="$(cat "$D/.pending-state/pid" 2>/dev/null)"
+recorded="$(cat "$D/.pending-state/owner" 2>/dev/null)"
+wait_for 10 logged "tab rename W:t1 sup ⏳1"
+kill -KILL "$owner" 2>/dev/null; wait "$owner" 2>/dev/null
+if [ "$recorded" = "$owner" ] && wait_for 10 dead "$WPID" \
+   && grep -qF "pending-watch: owner gone (pid $owner)" "$D/watch.out" \
+   && [ ! -f "$D/.pending-state/pid" ] && [ "$(tail -n 1 "$HERDR_STUB_LOG")" = "tab rename W:t1 sup" ]; then
+  ok "watcher exits and restores the label when its Claude owner dies"
+else fail "watcher exits and restores the label when its Claude owner dies" "owner=$owner recorded=$recorded out=$(cat "$D/watch.out")"; kill "$WPID" 2>/dev/null; fi
+WPID=""
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

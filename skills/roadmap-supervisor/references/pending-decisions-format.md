@@ -140,8 +140,9 @@ $W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 m�
 $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
 
-State lives in `<supervisor-dir>/.pending-state/` (`hash`, `pid`, `tab`, `base-label`,
-`notified/<Dn>`). `PENDING_POLL_SECONDS` (default 5) and `PENDING_RENOTIFY_SECONDS`
+State lives in `<supervisor-dir>/.pending-state/` (`hash`, `pid`, `owner`, `tab`,
+`base-label`, `notified/<Dn>`). `owner` is the Claude Code process that started the watcher;
+when it is gone the watcher exits with `pending-watch: owner gone`, restoring the tab label. `PENDING_POLL_SECONDS` (default 5) and `PENDING_RENOTIFY_SECONDS`
 (default 1800) override the timings. `line` appends `(watcher off)` when no watcher is
 running; "mới" marks an item that has not been notified yet. A `pid` that no longer belongs
 to a pending-watch process is treated as stale: `stop` never signals it and `watch` replaces
