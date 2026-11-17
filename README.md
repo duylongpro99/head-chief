@@ -40,6 +40,28 @@ npx skills add duylongpro99/head-chief --all -g -a claude-code
 npx skills use duylongpro99/head-chief --skill head-chief | claude
 ```
 
+### Install, update and uninstall across repos
+
+There are three ways to install a skill into a project. Pick one per project and skill, because a symlink and a copy cannot share the same folder.
+
+| Method | Install | How updates arrive | Update | Uninstall |
+| --- | --- | --- | --- | --- |
+| Symlink per project | From the consumer repo root: `~/personal/head-chief/install.sh --project --skill <name>` | The link follows the checkout's current HEAD | `git -C ~/personal/head-chief pull` updates every linked repo at once | `~/personal/head-chief/install.sh --uninstall --project --skill <name>` |
+| Symlink global | `~/personal/head-chief/install.sh --skill <name>` (links into `~/.claude/skills`) | Same as above | Same as above | `~/personal/head-chief/install.sh --uninstall --skill <name>` |
+| `npx skills` copy | `npx skills add duylongpro99/head-chief --skill <name>` (add `-g` for global) | Only after a push to the default branch on GitHub | `npx skills update <names>` | `npx skills remove <names>` |
+
+- **Symlinks follow HEAD.** Never switch branches in `~/personal/head-chief` while a supervisor or another session uses a linked skill: it changes the skill under every running consumer. Develop in a worktree (`git worktree add ../head-chief-<topic> -b <branch> main`), and pull `main` only when no supervisor is mid-run.
+- **Dependencies.** `roadmap-supervisor` needs `managed-session`. It declares this in its frontmatter (`metadata.requires`), and `install.sh` links the dependency too (`adding dependency managed-session (required by roadmap-supervisor)`). `install.sh --uninstall` removes only the skills you name. `npx skills` does not read `requires`, so name both: `npx skills add duylongpro99/head-chief --skill roadmap-supervisor --skill managed-session`.
+- **Find every consumer.** Symlinks into this checkout, or into any other clone whose path ends in `head-chief`:
+
+  ```bash
+  find ~ -maxdepth 6 -path '*/.claude/skills/*' -type l -lname '*head-chief/skills/*' \
+    -exec sh -c 'printf "%s -> %s\n" "$1" "$(readlink "$1")"' _ {} \;
+  ```
+
+  `npx skills` copies are recorded in each project's `skills-lock.json`: run `grep -l head-chief **/skills-lock.json` (zsh, or bash with `shopt -s globstar`) from a parent folder.
+- **Relink a link that points into another clone.** From the consumer repo root, run `~/personal/head-chief/install.sh --project --force --skill <name>`. `--force` replaces only symlinks, never a real folder.
+
 ## Use
 
 Trigger the orchestrator in any Claude Code session:
@@ -112,6 +134,10 @@ skills/
     references/            # run-contract.md, kinds.json, brief/result/review templates
     scripts/               # probe, state, new-run, start, prompt-wait, run-state, check-brief, stop, cleanup
     evals/                 # Skill evaluation cases
+  roadmap-supervisor/
+    SKILL.md               # Supervisor flow: shape, start, briefs, monitoring, operator gate, cleanup
+    references/            # brief-template, role-skill-map, monitoring-and-operator-gate, pending-decisions-format
+    scripts/               # pending-watch.sh (no-model ledger watcher) and its tests
 install.sh                 # Symlink skills from this checkout into a host's skill folder
 ```
 
@@ -121,6 +147,10 @@ install.sh                 # Symlink skills from this checkout into a host's ski
 cd skills/head-chief
 python3 scripts/init_ledger.py --test   # self-test the bootstrap + clock
 python3 scripts/quick_validate.py        # structural validation (ownership, resources, templates, secret hygiene)
+```
+
+```bash
+bash skills/roadmap-supervisor/scripts/tests/test-pending-watch.sh   # ledger watcher, stubbed herdr
 ```
 
 To try a skill from this checkout without publishing, link it into a host's skill folder:
@@ -139,5 +169,5 @@ The links follow this checkout's current HEAD: switching branches here changes t
 `npx skills` resolves from GitHub, so publishing an update is just pushing to the default branch. Consumers pull the latest with:
 
 ```bash
-npx skills update head-chief managed-session pr-review-loop envoy-peer
+npx skills update head-chief managed-session pr-review-loop envoy-peer roadmap-supervisor
 ```
