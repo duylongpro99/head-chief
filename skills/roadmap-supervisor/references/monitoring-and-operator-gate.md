@@ -72,9 +72,14 @@ Every operator question is first an item in `pending-decisions.md`
    reads your write as an operator edit and wakes you once for nothing.
 2. Then ask through `AskUserQuestion`, starting the question text with `D<n>:`. Several
    items may share one call.
-3. If the dialog returns an answer, record it (below). If a worker report closed the dialog,
+3. If the dialog returns an answer, record it (below). If it returns no answer (cancelled),
    do nothing more: the item stays OPEN in the ledger, the tab badge and the footer line
    keep it visible, and the watcher keeps reminding.
+
+While the dialog is open, nothing wakes you. Worker reports, cross-session messages and the
+watcher's `user-edit` exit all wait in a queue and arrive after the dialog closes. Keep the
+dialog for moments when you have nothing else to react to, and after it closes handle the
+queued events before anything else.
 
 Write each `AskUserQuestion` like this:
 
@@ -115,6 +120,10 @@ text, and each `Seen` value that changed. Then, for every answer:
 1. Rewrite `Answer:` as `Answer: <YYYY-MM-DD HH:MM> (<dialog|chat|file>) <the operator's
    words, verbatim>` and change the header status to ANSWERED.
 2. For a mark, set `Seen: [x]` and leave the status OPEN.
+   If two channels give different answers for one item (for example the dialog and a file
+   edit made while the dialog was open), record neither. Write both verbatim with time and
+   channel on a `Conflict:` line above `Seen:`, keep the item OPEN with an empty `Answer:`,
+   and ask the operator in chat to confirm one (`D<n>: A` or `D<n>: B`).
 3. Run `pending-watch.sh synced <dir>` in the same Bash call as the write.
 4. Put the answer into the next brief, or SendMessage it to the session it blocks.
 5. Start `pending-watch.sh watch <dir>` with `run_in_background` again whenever it is not

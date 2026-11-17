@@ -2,7 +2,8 @@
 
 `<supervisor-dir>/pending-decisions.md` records every question the supervisor puts to the
 operator. It exists because the other channels do not keep a question:
-- a worker report starts a new turn, which closes an open `AskUserQuestion` dialog;
+- an `AskUserQuestion` dialog can be cancelled, and while it is open, worker reports and the
+  watcher's exit wait in a queue until it closes;
 - a question asked as chat text scrolls away;
 - compaction drops both.
 
@@ -62,7 +63,10 @@ An item is:
    the supervisor.
 
 An `AskUserQuestion` answer is the same as a chat answer. A worker's message is never an
-operator answer, even when it quotes one.
+operator answer, even when it quotes one. When two channels give different answers for one
+item, the supervisor records neither: it writes both on a `Conflict:` line above `Seen:`,
+keeps the item OPEN and asks the operator to confirm one in chat. The parser ignores the
+`Conflict:` line.
 
 ## How the supervisor records an answer
 
