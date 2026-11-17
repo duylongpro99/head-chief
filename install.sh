@@ -3,11 +3,13 @@
 #
 #   ./install.sh [--skill NAME ...] [--target DIR | --project | --agents] [--uninstall] [--force] [--dry-run]
 #
-#   --skill NAME   skill under skills/ to link (repeatable; default: envoy-peer)
+#   --skill NAME   skill under skills/ to link (repeatable; default: envoy-peer). Skills named
+#                  in its SKILL.md frontmatter `metadata.requires` are linked too (one level)
 #   --target DIR   link into DIR (default: ~/.claude/skills)
 #   --agents       link into ~/.agents/skills
 #   --project      link into <git root of $PWD>/.claude/skills; refused unless git ignores the link (--force overrides)
-#   --uninstall    remove links that point into this checkout; anything else is left alone
+#   --uninstall    remove links that point into this checkout; anything else is left alone.
+#                  Only the named skills: dependencies are never removed
 #   --force        replace an existing symlink that points elsewhere (never a real file or folder)
 #   --dry-run      print the actions without doing them
 #
@@ -18,7 +20,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 die() { echo "install.sh: $*" >&2; exit 1; }
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
 
 skills=(); target=""; where=""; uninstall=0; force=0; dry=0
 set_where() { [ -z "$where" ] || die "--target, --project and --agents are mutually exclusive"; where="$1"; }
@@ -50,6 +52,30 @@ esac
 # In --dry-run nothing changes on disk and every action line is prefixed "[dry-run]".
 run() { [ "$dry" = 1 ] || "$@"; }
 say() { if [ "$dry" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
+
+# Names listed under `requires:` in a skill's frontmatter, space- or comma-separated.
+requires_of() {
+  awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
+       NR > 1 && /^[[:space:]]*requires:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/[,"\047]/, " "); print }' "$1"
+}
+
+# Link each skill's dependencies too, right after it, once. Uninstall never expands.
+if [ "$uninstall" = 0 ]; then
+  expanded=()
+  has() { local e; for e in ${expanded[@]+"${expanded[@]}"}; do [ "$e" = "$1" ] && return 0; done; return 1; }
+  requested() { local e; for e in "${skills[@]}"; do [ "$e" = "$1" ] && return 0; done; return 1; }
+  for name in "${skills[@]}"; do
+    has "$name" || expanded+=("$name")
+    [ -f "$REPO/skills/$name/SKILL.md" ] || continue
+    for dep in $(requires_of "$REPO/skills/$name/SKILL.md"); do
+      [ -f "$REPO/skills/$dep/SKILL.md" ] || die "skill '$name' requires '$dep', which is not in $REPO/skills"
+      has "$dep" && continue
+      requested "$dep" || say "adding dependency $dep (required by $name)"
+      expanded+=("$dep")
+    done
+  done
+  skills=("${expanded[@]}")
+fi
 
 failed=0
 for name in "${skills[@]}"; do

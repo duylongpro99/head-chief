@@ -1,6 +1,8 @@
 ---
 name: roadmap-supervisor
 description: "Turn this session into a non-coding supervisor that drives a roadmap of milestones, or one plan of phases, to completion through other sessions: one named Herdr session per job (plan, cook, review, debug), a brief file each, an AgentKit skill chosen per role, /loop self-pacing, operator decisions relayed, sessions cleaned up. Use when the user says \"giám sát roadmap\", \"giám sát plan\", \"làm giám sát viên\", \"supervisor\", \"supervise the roadmap/plan\", or runs /loop asking to finish milestones or phases via separate sessions. Not for routing ad-hoc requests to existing sessions (head-chief), starting or stopping one session (managed-session), or implementing a plan in this session (ak-cook)."
+metadata:
+  requires: managed-session
 ---
 
 # Roadmap Supervisor
