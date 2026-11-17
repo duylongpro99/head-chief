@@ -2,7 +2,7 @@
 
 **A Claude Code Agent Skill collection that turns one session into the head chief of your project** — the single point of contact between you and every other Claude Code session working in the same repo. It discovers sessions, spawns/stops them, classifies and routes your requests to the right session, and keeps a persistent, evidence-backed ledger of who is doing what.
 
-This repo ships **four skills** that work together:
+This repo ships **five skills** that work together:
 
 | Skill | Purpose |
 | --- | --- |
@@ -10,6 +10,7 @@ This repo ships **four skills** that work together:
 | **`managed-session`** | The lifecycle helper the chief uses to **spawn and stop** Claude Code sessions as Herdr panes (default, requires `HERDR_ENV=1`) or herdr core terminals (`--hc`, requires `hc`). Each session's auto-compact window defaults to 400k tokens (`--compact-window` to change it). |
 | **`pr-review-loop`** | Review GitHub PRs with a separate session and loop review → verify/fix → re-review until approved. Cook mode (run by the implementer), reviewer mode (finds and wakes or restores the implementer session) and `--review-only`. Uses `managed-session` when installed. |
 | **`envoy-peer`** | Hand one task with acceptance criteria to an agent CLI of another kind (codex, grok, omp, agy, …) in its own Herdr pane, let an independent reviewer pane check the work, and loop fix → re-review until accepted. Only the status, a short summary and file paths come back. Requires `HERDR_ENV=1`. |
+| **`roadmap-supervisor`** | Turn one session into a non-coding supervisor that drives a roadmap of milestones, or one plan of phases, to completion through single-purpose worker sessions (plan, cook, review, debug), each with a brief file. Relays operator decisions through a `pending-decisions.md` ledger and cleans up every session it opened. Uses `managed-session`; requires `HERDR_ENV=1`. |
 
 > Distributed as [Agent Skills](https://skills.sh). Install them into Claude Code (or any of the 70+ supported agents) with the `skills` CLI.
 

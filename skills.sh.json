@@ -5,7 +5,7 @@
         {
             "title": "Session Orchestration",
             "description": "Turn one Claude Code session into the project's head chief and let it spawn, route, and manage every other session in the same repo, or hand a task to a peer session of another agent kind and review it until accepted.",
-            "skills": ["head-chief", "managed-session", "pr-review-loop", "envoy-peer"]
+            "skills": ["head-chief", "managed-session", "pr-review-loop", "envoy-peer", "roadmap-supervisor"]
         }
     ]
 }
