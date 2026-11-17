@@ -50,9 +50,13 @@ All three are fixed (`d119d6d`), along with CRLF, a scoped `pgrep`, a ledger wri
 from Bash, and `install.sh` leaving an already-present dependency alone (`d3e7a65`). The
 tests went from 7 to 10.
 
+## Follow-up
+
+- The watcher left running after its Claude session dies is fixed in PR #5 (`f3441f9`). The
+  watcher records its owning `claude` process at start and exits with "owner gone" once that
+  process is no longer alive. Test 11 covers it.
+- The remote branch `feat/roadmap-supervisor-pending-ledger` has been deleted.
+
 ## Left open
 
-- If a Claude session dies without stopping its background tasks, the watcher may keep
-  running and re-notifying. This was not verified.
-- `install.sh` reads `requires:` only in its one-line form.
-- The remote branch `feat/roadmap-supervisor-pending-ledger` still exists on origin.
+- `install.sh` reads `requires:` only in its one-line form. The operator accepted this.
