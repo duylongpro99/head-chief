@@ -128,7 +128,7 @@ Record it in `sessions.md`.
   - anything sent off the machine;
   - accepting a gate.
 
-  Write the question into `pending-decisions.md` as item `D<n>` and run `pending-watch.sh synced <dir>` in the same Bash call. Only then ask with `AskUserQuestion`, with `D<n>` in the question text: recommended option first, real numbers in the descriptions, in the operator's language. Answers arrive as the dialog result, as chat `D<n>: …` or `D<n> seen`, or as a file edit that ends the watcher. Record each one verbatim with its time, then copy it into the next brief. If the operator delegates ("theo khuyến nghị"), write down what the delegation covers. The full procedure is in `references/monitoring-and-operator-gate.md`.
+  Write the question into `pending-decisions.md` as item `D<n>` and run `pending-watch.sh synced <dir>` in the same Bash call (change the ledger only from Bash, never with Edit or Write). Only then ask with `AskUserQuestion`, with `D<n>` in the question text: recommended option first, real numbers in the descriptions, in the operator's language. Answers arrive as the dialog result, as chat `D<n>: …` or `D<n> seen`, or as a file edit that ends the watcher. Record each one verbatim with its time, then copy it into the next brief. If the operator delegates ("theo khuyến nghị"), write down what the delegation covers. The full procedure is in `references/monitoring-and-operator-gate.md`.
 - **Footer.** While `pending-watch.sh line <dir>` prints anything, end every turn with that line, unchanged.
 - **Reporting.** After each milestone or phase merge, and at each decision point, tell the operator three things, in a few lines: the result first, then what is running, then what waits on them.
 
@@ -139,7 +139,7 @@ Record it in `sessions.md`.
   - every remaining item is blocked on an operator decision. Name the decision that restarts each one.
 
   Never call the roadmap or plan done while an item is not done.
-- Close every session you started. Run `pending-watch.sh stop <dir>`. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f pending-watch`) before the final report.
+- Close every session you started. Run `pending-watch.sh stop <dir>`. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f "pending-watch.sh watch <dir>"`, scoped to your folder) before the final report.
 - The final report lists every OPEN item in `pending-decisions.md`, seen or not, next to the decision or item it blocks.
 - Run the project's post-merge steps. Find them in the project's CLAUDE.md, AGENTS.md or contributor docs, or ask the operator at Start if none are written. For design-kit, that means syncing the skill mirror to Hermes, never while a live job runs.
 

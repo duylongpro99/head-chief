@@ -135,5 +135,34 @@ if [ "$(tail -n 1 "$HERDR_STUB_LOG")" = "tab rename W:t1 sup" ] \
   ok "stop restores the base label and leaves no process"
 else fail "stop restores the base label and leaves no process" "log=$(tr '\n' '|' < "$HERDR_STUB_LOG") stop=$(cat "$D/stop.out")"; fi
 
+# 8. synced lists an answer the operator saved that the supervisor has not recorded.
+total=$((total + 1)); new_case synced-reports
+item 1 OPEN ' ' 'B' >> "$D/pending-decisions.md"
+out="$(item 2 OPEN ' ' '' | sup_write)"
+if [ "$out" = "pending-watch: D1 has an answer in the file that is not recorded yet" ]; then
+  ok "synced reports an unrecorded answer"
+else fail "synced reports an unrecorded answer" "out='$out'"; fi
+
+# 9. A stale pid that now belongs to another process is neither signalled nor blocking.
+total=$((total + 1)); new_case stale-pid
+item 1 OPEN ' ' '' | sup_write
+sleep 300 & victim=$!
+mkdir -p "$D/.pending-state"; echo "$victim" > "$D/.pending-state/pid"
+"$SCRIPT" line "$D" > "$D/line.out"
+"$SCRIPT" stop "$D" > /dev/null 2>&1
+if kill -0 "$victim" 2>/dev/null && grep -qF "(watcher off)" "$D/line.out" \
+   && start_watch && kill -0 "$WPID" 2>/dev/null; then
+  ok "stale pid is not killed and does not block a new watcher"
+else fail "stale pid is not killed and does not block a new watcher" "line=$(cat "$D/line.out")"; fi
+kill "$victim" 2>/dev/null; wait "$victim" 2>/dev/null
+stop_watch
+
+# 10. CRLF line endings parse like LF.
+total=$((total + 1)); new_case crlf
+item 1 OPEN ' ' '' | sed 's/$/\r/' | sup_write
+if line="$("$SCRIPT" line "$D" 2>&1)" && printf '%s' "$line" | grep -qF "⏳ 1 đang chờ bạn (D1 mới)"; then
+  ok "CRLF ledger parses"
+else fail "CRLF ledger parses" "line='$line'"; fi
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

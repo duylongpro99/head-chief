@@ -2,7 +2,8 @@
 # pending-watch.sh — watch a supervisor's pending-decisions.md ledger without calling any model.
 #
 #   pending-watch.sh watch  <dir> [--tab <tab-id>] [--base-label <label>]
-#   pending-watch.sh synced <dir>   # run in the same Bash call as every supervisor write
+#   pending-watch.sh synced <dir>   # run in the same Bash call as every supervisor write;
+#                                   # lists answers in the file that are not recorded yet
 #   pending-watch.sh line   <dir>   # one-line footer while items wait; nothing when none do
 #   pending-watch.sh stop   <dir>   # stop a running watcher and restore the tab label
 #
@@ -20,7 +21,7 @@
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 POLL="${PENDING_POLL_SECONDS:-5}"
 RENOTIFY="${PENDING_RENOTIFY_SECONDS:-1800}"
@@ -34,8 +35,11 @@ DIR="$(cd "$1" && pwd -P)"; shift
 LEDGER="$DIR/pending-decisions.md"
 STATE="$DIR/.pending-state"
 
+# An editor may rename the file away for a moment while saving; read that as "missing".
 ledger_hash() {
-  if [ -f "$LEDGER" ]; then shasum -a 256 < "$LEDGER" | awk '{print $1}'; else echo missing; fi
+  local h
+  h="$( { shasum -a 256 < "$LEDGER"; } 2>/dev/null | awk '{print $1}')" || true
+  echo "${h:-missing}"
 }
 
 # One record per item: id \t status \t seen(0|1) \t answered(0|1) \t question line.
@@ -43,6 +47,7 @@ ledger_hash() {
 parse() {
   [ -f "$LEDGER" ] || return 0
   LC_ALL=C awk -v SEP=" · " '
+    { sub(/\r$/, "") }
     function flush() {
       if (id != "") printf "%s\t%s\t%d\t%d\t%s\n", id, status, seen, answered, question
       id = ""
@@ -69,7 +74,7 @@ parse() {
     inanswer { if (trim($0) != "") answered = 1; next }
     question == "" && trim($0) != "" { question = trim($0) }
     END { flush() }
-  ' "$LEDGER"
+  ' "$LEDGER" 2>/dev/null || true
 }
 
 # Filters parse output: counted items (open, unanswered, unseen) as "id \t question",
@@ -77,7 +82,14 @@ parse() {
 select_counted() { awk -F'\t' '$1 != "MALFORMED" && $2 == "OPEN" && $3 == 0 && $4 == 0 { print $1 "\t" $5 }'; }
 select_bad() { awk -F'\t' '$1 == "MALFORMED" { print $2 }'; }
 
-pid_alive() { [ -f "$STATE/pid" ] && kill -0 "$(cat "$STATE/pid")" 2>/dev/null; }
+# A recorded pid counts only while it is a pending-watch process: after a crash or a
+# reboot the number may belong to something else, which must never be signalled.
+pid_alive() {
+  local pid
+  [ -f "$STATE/pid" ] || return 1
+  pid="$(cat "$STATE/pid")"
+  kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q 'pending-watch'
+}
 
 restore_label() {
   if [ -f "$STATE/tab" ] && [ -f "$STATE/base-label" ]; then
@@ -87,9 +99,15 @@ restore_label() {
 
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p" | head -n 1; }
 
+# Accepting the current file as the supervisor's own could hide an answer the operator
+# saved just before, so synced lists every answer that is still waiting to be recorded.
 cmd_synced() {
+  local id
   mkdir -p "$STATE"
   ledger_hash > "$STATE/hash"
+  parse | awk -F'\t' '$1 != "MALFORMED" && $2 == "OPEN" && $4 == 1 { print $1 }' | while IFS= read -r id; do
+    echo "pending-watch: $id has an answer in the file that is not recorded yet"
+  done
 }
 
 cmd_line() {
@@ -115,7 +133,7 @@ cmd_stop() {
   local pid
   if [ -f "$STATE/pid" ]; then
     pid="$(cat "$STATE/pid")"
-    if kill -0 "$pid" 2>/dev/null; then
+    if pid_alive; then
       kill -TERM "$pid" 2>/dev/null || true
       for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
       if kill -0 "$pid" 2>/dev/null; then
@@ -124,7 +142,7 @@ cmd_stop() {
       fi
       echo "pending-watch: stopped pid $pid"
     else
-      echo "pending-watch: pid $pid was not running"
+      echo "pending-watch: pid $pid is not a running watcher; removed the stale record"
     fi
     rm -f "$STATE/pid"
   else

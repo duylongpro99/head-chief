@@ -69,7 +69,11 @@ Every operator question is first an item in `pending-decisions.md`
 
 1. Append item `D<n>` with the next free number, status OPEN, `Seen: [ ]`, empty `Answer:`.
    Write it and run `pending-watch.sh synced <dir>` in the same Bash call, or the watcher
-   reads your write as an operator edit and wakes you once for nothing.
+   reads your write as an operator edit and wakes you once for nothing. Change the ledger
+   only from Bash (a heredoc, `sed` or `python3`), never with Edit or Write: those tools
+   cannot run `synced` in the same call. If `synced` prints `D<n> has an answer in the file
+   that is not recorded yet`, the operator saved an answer just before your write; record it
+   now (below), because the watcher will not report it again.
 2. Then ask through `AskUserQuestion`, starting the question text with `D<n>:`. Several
    items may share one call.
 3. If the dialog returns an answer, record it (below). If it returns no answer (cancelled),
@@ -126,9 +130,11 @@ text, and each `Seen` value that changed. Then, for every answer:
    and ask the operator in chat to confirm one (`D<n>: A` or `D<n>: B`).
 3. Run `pending-watch.sh synced <dir>` in the same Bash call as the write.
 4. Put the answer into the next brief, or SendMessage it to the session it blocks.
-5. Start `pending-watch.sh watch <dir>` with `run_in_background` again whenever it is not
-   running: after a `user-edit` exit it always needs restarting. `watch` refuses to start a
-   second watcher for the same folder.
+5. After a `user-edit` exit, always run `pending-watch.sh synced <dir>` before restarting,
+   even when you wrote nothing (a `Seen: [x]` the operator set, or a typo fix): without it the
+   restarted watcher sees the same edit and exits again within two polls. Then start
+   `pending-watch.sh watch <dir>` with `run_in_background` whenever it is not running.
+   `watch` refuses to start a second watcher for the same folder.
 
 ## Reporting to the operator
 
@@ -145,7 +151,8 @@ Keep it to a few lines; link reports instead of restating them.
 Stop (`ScheduleWakeup` with `stop: true`) when no session is running and either every
 requested item (roadmap row or plan phase) is done and checked, or every remaining item is
 blocked by an operator decision. Before the final message, run `pending-watch.sh stop <dir>`
-and check that `pgrep -f pending-watch` is empty. The final message lists: items done with
+and check that `pgrep -f "pending-watch.sh watch <dir>"` is empty (other supervisors on this
+machine have their own watchers). The final message lists: items done with
 their commits, items left with the decision or external event that unblocks each, every
 OPEN `D<n>` item in `pending-decisions.md` (seen or not) next to what it blocks, open
 follow-ups, and confirmation that no session or process is left running. Never report the roadmap or plan

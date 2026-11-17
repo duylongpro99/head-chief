@@ -135,7 +135,7 @@ Answer: 2026-11-17 11:52 (file) A, nhưng ghi số đo vào report
 ```bash
 W=<skill-dir>/scripts/pending-watch.sh
 $W watch  <supervisor-dir>   # run_in_background; exits 0 with "user-edit" on an operator edit
-$W synced <supervisor-dir>   # same Bash call as every supervisor write to the ledger
+$W synced <supervisor-dir>   # same Bash call as every supervisor write; lists unrecorded file answers
 $W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 mới) → /abs/pending-decisions.md"
 $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
@@ -143,4 +143,6 @@ $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 State lives in `<supervisor-dir>/.pending-state/` (`hash`, `pid`, `tab`, `base-label`,
 `notified/<Dn>`). `PENDING_POLL_SECONDS` (default 5) and `PENDING_RENOTIFY_SECONDS`
 (default 1800) override the timings. `line` appends `(watcher off)` when no watcher is
-running; "mới" marks an item that has not been notified yet.
+running; "mới" marks an item that has not been notified yet. A `pid` that no longer belongs
+to a pending-watch process is treated as stale: `stop` never signals it and `watch` replaces
+it. CRLF line endings are accepted.
