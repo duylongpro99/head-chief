@@ -1,0 +1,22 @@
+{
+  "name": "head-chief-intro-video",
+  "private": true,
+  "description": "Remotion source for the head-chief intro video shown in the README",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts HeadChiefIntro ../assets/head-chief-intro.mp4",
+    "render:gif": "ffmpeg -y -i ../assets/head-chief-intro.mp4 -vf \"fps=12,scale=880:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4\" ../assets/head-chief-intro.gif"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.545",
+    "@remotion/google-fonts": "^4.0.545",
+    "@remotion/transitions": "^4.0.545",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.545"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "typescript": "^7.0.2"
+  }
+}

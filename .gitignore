@@ -13,3 +13,7 @@ __pycache__/
 
 .claude
 .agentkit
+
+# Remotion intro video: dependencies and scratch renders (source lives in video/src)
+video/node_modules/
+video/out/
