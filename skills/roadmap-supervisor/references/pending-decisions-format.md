@@ -155,7 +155,8 @@ For a new item, a reminder and a malformed header, the watcher sends a Herdr not
 `terminal-notifier` is on `PATH` the watcher also sends a desktop notification with the same
 title and body. Its subtitle names the supervisor folder, the last line of its message gives
 the full path, and clicking it opens that folder, where `pending-decisions.md` is. A reminder replaces the earlier desktop notification of the
-same item. Without `terminal-notifier` only the Herdr notification is sent. When
+same item. Without `terminal-notifier` only the Herdr notification is sent, and on macOS
+the watcher says so once when it starts (`pending-watch: terminal-notifier not found …`). When
 `terminal-notifier` fails, most often because macOS has notifications switched off for it
 (System Settings → Notifications → terminal-notifier), the watcher prints
 `pending-watch: terminal-notifier failed …` once and keeps running.
