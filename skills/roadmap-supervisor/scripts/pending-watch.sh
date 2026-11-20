@@ -255,6 +255,9 @@ cmd_watch() {
   trap 'exit 130' INT
 
   echo "pending-watch: watching $LEDGER (tab $tab, base label '$base', pid $$, owner ${owner:-none})"
+  if [ "$(uname -s)" = Darwin ] && ! command -v terminal-notifier >/dev/null 2>&1; then
+    echo "pending-watch: terminal-notifier not found, so notifications cannot open the folder on click (brew install terminal-notifier)"
+  fi
   local label="" candidate="" warned="" h now id q last n new_label records bad
   while :; do
     if [ -n "$owner" ] && ! { kill -0 "$owner" 2>/dev/null && is_claude "$owner"; }; then

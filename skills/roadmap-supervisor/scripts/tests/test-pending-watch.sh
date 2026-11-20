@@ -207,7 +207,8 @@ wait_for 5 test -f "$D/.pending-state/pid"
 item 1 OPEN ' ' '' | sup_write
 if ! PATH="$ROOT/bin:/usr/bin:/bin" command -v terminal-notifier > /dev/null \
    && wait_for 10 logged "notification show ⏳ D1 mới" && wait_for 5 logged "tab rename W:t1 sup ⏳1" \
-   && kill -0 "$WPID" 2>/dev/null; then
+   && kill -0 "$WPID" 2>/dev/null \
+   && { [ "$(uname -s)" != Darwin ] || grep -qF "terminal-notifier not found" "$D/watch.out"; }; then
   ok "herdr notification is sent when terminal-notifier is missing"
 else fail "herdr notification is sent when terminal-notifier is missing" "$(cat "$HERDR_STUB_LOG")"; fi
 stop_watch
