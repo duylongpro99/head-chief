@@ -147,3 +147,15 @@ when it is gone the watcher exits with `pending-watch: owner gone`, restoring th
 running; "mới" marks an item that has not been notified yet. A `pid` that no longer belongs
 to a pending-watch process is treated as stale: `stop` never signals it and `watch` replaces
 it. CRLF line endings are accepted.
+
+## Notifications
+
+For a new item, a reminder and a malformed header, the watcher sends a Herdr notification
+(`herdr notification show`). A Herdr notification cannot carry a click action, so when
+`terminal-notifier` is on `PATH` the watcher also sends a desktop notification with the same
+title and body. Its subtitle names the supervisor folder, the last line of its message gives
+the full path, and clicking it opens that folder, where `pending-decisions.md` is. A reminder replaces the earlier desktop notification of the
+same item. Without `terminal-notifier` only the Herdr notification is sent. When
+`terminal-notifier` fails, most often because macOS has notifications switched off for it
+(System Settings → Notifications → terminal-notifier), the watcher prints
+`pending-watch: terminal-notifier failed …` once and keeps running.

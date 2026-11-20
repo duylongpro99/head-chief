@@ -150,7 +150,7 @@ python3 scripts/quick_validate.py        # structural validation (ownership, res
 ```
 
 ```bash
-bash skills/roadmap-supervisor/scripts/tests/test-pending-watch.sh   # ledger watcher, stubbed herdr
+bash skills/roadmap-supervisor/scripts/tests/test-pending-watch.sh   # ledger watcher, stubbed herdr and terminal-notifier
 ```
 
 To try a skill from this checkout without publishing, link it into a host's skill folder:

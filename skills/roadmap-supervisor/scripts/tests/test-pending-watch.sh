@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for pending-watch.sh with a stub `herdr` on PATH. No model, no real Herdr.
+# Tests for pending-watch.sh with stub `herdr` and `terminal-notifier` on PATH. No model, no real Herdr.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -19,6 +19,9 @@ esac
 exit 0
 EOF
 chmod +x "$ROOT/bin/herdr"
+# Stub terminal-notifier too, so a test run never raises a real desktop notification.
+printf '#!/usr/bin/env bash\nprintf '"'"'terminal-notifier %%s\\n'"'"' "$*" >> "$HERDR_STUB_LOG"\n' > "$ROOT/bin/terminal-notifier"
+chmod +x "$ROOT/bin/terminal-notifier"
 export PATH="$ROOT/bin:$PATH"
 
 WPID=""
@@ -181,6 +184,34 @@ if [ "$recorded" = "$owner" ] && wait_for 10 dead "$WPID" \
   ok "watcher exits and restores the label when its Claude owner dies"
 else fail "watcher exits and restores the label when its Claude owner dies" "owner=$owner recorded=$recorded out=$(cat "$D/watch.out")"; kill "$WPID" 2>/dev/null; fi
 WPID=""
+
+# 12. Each notification also goes out as a clickable one that opens the supervisor folder.
+total=$((total + 1)); new_case $'click m\xe1\xbb\x9f'; start_watch
+printf '## D1 · M5 · OPEN · 2026-11-17 11:40\n[M5] judge model?\nSeen: [ ]\nAnswer:\n' | sup_write
+real="$(cd "$D" && pwd -P)"
+url="file://$(cd "$ROOT" && pwd -P)/click%20m%E1%BB%9F"
+if wait_for 10 logged "terminal-notifier -title ⏳ D1 mới -subtitle Bấm để mở ${real##*/} -message \\[M5] judge model?" \
+   && logged "📂 $real -open $url -group pending-watch:$real:D1" \
+   && logged "notification show ⏳ D1 mới --body [M5] judge model? --sound request"; then
+  ok "clickable notification opens the supervisor folder"
+else fail "clickable notification opens the supervisor folder" "url=$url log=$(cat "$HERDR_STUB_LOG")"; fi
+stop_watch
+
+# 13. Without terminal-notifier the Herdr notification is still sent.
+total=$((total + 1)); new_case no-notifier
+mv "$ROOT/bin/terminal-notifier" "$ROOT/terminal-notifier.off"
+# A PATH of system folders only, so an installed terminal-notifier is not found either.
+PATH="$ROOT/bin:/usr/bin:/bin" "$SCRIPT" watch "$D" > "$D/watch.out" 2>&1 &
+WPID=$!
+wait_for 5 test -f "$D/.pending-state/pid"
+item 1 OPEN ' ' '' | sup_write
+if ! PATH="$ROOT/bin:/usr/bin:/bin" command -v terminal-notifier > /dev/null \
+   && wait_for 10 logged "notification show ⏳ D1 mới" && wait_for 5 logged "tab rename W:t1 sup ⏳1" \
+   && kill -0 "$WPID" 2>/dev/null; then
+  ok "herdr notification is sent when terminal-notifier is missing"
+else fail "herdr notification is sent when terminal-notifier is missing" "$(cat "$HERDR_STUB_LOG")"; fi
+stop_watch
+mv "$ROOT/terminal-notifier.off" "$ROOT/bin/terminal-notifier"
 
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]
