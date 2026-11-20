@@ -76,7 +76,8 @@ contract from the same earlier phase, start them only after that phase is merged
    Then run `<this skill's folder>/scripts/pending-watch.sh synced <dir>` and start
    `pending-watch.sh watch <dir>` with `run_in_background`. It calls no model: it badges this
    Herdr tab `⏳N`, sends notifications, and exits when the operator edits the ledger, which
-   wakes you. Record it in `sessions.md` as a row of kind `process` with its PID (from
+   wakes you. With `terminal-notifier` installed (`brew install terminal-notifier`), each
+   notification also arrives as a desktop notification that opens `<dir>` when clicked. Record it in `sessions.md` as a row of kind `process` with its PID (from
    `<dir>/.pending-state/pid`).
 4. Tell the operator, in their language, the order you will run and the gates that need them. Then start the first session and the loop.
 

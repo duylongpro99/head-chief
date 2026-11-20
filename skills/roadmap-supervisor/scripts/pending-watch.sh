@@ -14,6 +14,9 @@
 #   Run it with run_in_background so its exit wakes the supervisor.
 #   --tab defaults to the tab of `herdr pane current`; --base-label overrides the label read
 #   with `herdr tab get`.
+#   Each notification is sent through Herdr and, when `terminal-notifier` is installed, also
+#   as a desktop notification that opens <dir> when clicked (a Herdr notification cannot
+#   carry a click action).
 #   When started under a Claude Code process, it exits with "pending-watch: owner gone" once
 #   that process is gone, so a crashed or closed session leaves no watcher behind.
 # line: exits 2 on a malformed "## D" header.
@@ -23,8 +26,9 @@
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; }
 
+notifier_warned=""
 POLL="${PENDING_POLL_SECONDS:-5}"
 RENOTIFY="${PENDING_RENOTIFY_SECONDS:-1800}"
 
@@ -116,6 +120,44 @@ find_owner() {
 }
 
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p" | head -n 1; }
+
+# file:// URL of the supervisor folder, percent-encoded byte by byte so spaces and
+# non-ASCII names survive.
+dir_url() {
+  local LC_ALL=C s="$DIR" out="" c i n
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9/._~-]) out="$out$c" ;;
+      # Old bash reports a byte above 127 as a negative number; keep the low 8 bits.
+      *) n="$(printf '%d' "'$c")"; out="$out$(printf '%%%02X' $((n & 255)))" ;;
+    esac
+  done
+  printf 'file://%s' "$out"
+}
+
+# notify <group> <title> <body>: the Herdr notification, plus a clickable one that opens
+# the supervisor folder. <group> makes a reminder replace the earlier notification of the
+# same item instead of stacking.
+notify() {
+  local group="$1" title="$2" body="$3"
+  herdr notification show "$title" --body "$body" --sound request >/dev/null 2>&1 || true
+  command -v terminal-notifier >/dev/null 2>&1 || return 0
+  # terminal-notifier reads a leading "[", "(", "<" or "-" as syntax unless it is escaped.
+  case "$body" in '['*|'('*|'<'*|-*) body="\\$body" ;; esac
+  # macOS shows the title and the subtitle on one line each and wraps only the message, so
+  # the subtitle carries just the folder name and the full path goes on its own message line.
+  local err short="$DIR"
+  case "$DIR" in "$HOME"/*) short="~${DIR#"$HOME"}" ;; esac
+  body="$body
+📂 $short"
+  if ! err="$(terminal-notifier -title "$title" -subtitle "Bấm để mở ${DIR##*/}" -message "$body" \
+      -open "$(dir_url)" -group "pending-watch:$DIR:$group" 2>&1 >/dev/null </dev/null)"; then
+    # Usually macOS has notifications switched off for terminal-notifier. Say so once.
+    [ -n "$notifier_warned" ] || echo "pending-watch: terminal-notifier failed, no clickable notification: $err" >&2
+    notifier_warned=1
+  fi
+}
 
 # Accepting the current file as the supervisor's own could hide an answer the operator
 # saved just before, so synced lists every answer that is still waiting to be recorded.
@@ -237,7 +279,7 @@ cmd_watch() {
         case "$warned" in *"|$q|"*) continue ;; esac
         warned="$warned|$q|"
         echo "pending-watch: malformed header '$q'" >&2
-        herdr notification show "⏳ pending-decisions.md" --body "pending-watch: malformed header '$q'" --sound request >/dev/null 2>&1 || true
+        notify malformed "⏳ pending-decisions.md" "pending-watch: malformed header '$q'"
       done <<< "$bad"
     fi
 
@@ -246,12 +288,12 @@ cmd_watch() {
       [ -n "$id" ] || continue
       n=$((n + 1))
       if [ ! -f "$STATE/notified/$id" ]; then
-        herdr notification show "⏳ $id mới" --body "$q" --sound request >/dev/null 2>&1 || true
+        notify "$id" "⏳ $id mới" "$q"
         echo "$now" > "$STATE/notified/$id"
       else
         last="$(cat "$STATE/notified/$id")"
         if [ $((now - last)) -ge "$RENOTIFY" ]; then
-          herdr notification show "⏳ $id vẫn chờ" --body "$q" --sound request >/dev/null 2>&1 || true
+          notify "$id" "⏳ $id vẫn chờ" "$q"
           echo "$now" > "$STATE/notified/$id"
         fi
       fi
