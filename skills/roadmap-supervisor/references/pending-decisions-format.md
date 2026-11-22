@@ -1,13 +1,48 @@
-# pending-decisions.md format
+# Pending-decisions ledger format
 
-`<supervisor-dir>/pending-decisions.md` records every question the supervisor puts to the
-operator. It exists because the other channels do not keep a question:
+The ledger records every question the supervisor puts to the operator. It exists because the other channels do not keep a question:
 - an `AskUserQuestion` dialog can be cancelled, and while it is open, worker reports and the
   watcher's exit wait in a queue until it closes;
 - a question asked as chat text scrolls away;
 - compaction drops both.
 
 The ledger is the record, and the dialog is only a shortcut. The operator edits it by hand.
+
+## Where the files are
+
+| File | Where | What |
+|---|---|---|
+| Live ledger | `~/supervisor/<project>--<session>.md` (`SUPERVISOR_HOME` overrides the folder) | OPEN items of one running supervisor. The operator answers every project here. |
+| `ledger.path` | `<supervisor-dir>/` | One line: the absolute path of the live ledger. Every command reads the ledger through it. |
+| Archive | `<supervisor-dir>/pending-decisions.archive.md` | Recorded items, ANSWERED, oldest first |
+| Final ledger | `<supervisor-dir>/pending-decisions.final.md` | The live ledger after `close`; items still OPEN when the supervisor stopped |
+| Old layout | `<supervisor-dir>/pending-decisions.md` | Used when `ledger.path` is missing. `init` migrates it and keeps it as `pending-decisions.md.migrated`. |
+
+`init <supervisor-dir> --session <name>` creates the live ledger with this header (the project
+is the git root of `<supervisor-dir>`; `--project`, `--tab` and `--pane` override the defaults,
+which come from the git root name and `herdr pane current`):
+
+```text
+# Pending decisions
+Project: atoria · /Users/me/personal/agent/atoria
+Supervisor: atoria-sup · Herdr tab w1:t3 · pane w1:p7
+Started: 2026-11-22 10:05 · Archive: /Users/me/personal/agent/atoria/plans/261122-1000-x-supervisor/pending-decisions.archive.md
+```
+
+No header line starts with `## `, so the parser skips it. `init` reuses an existing file whose
+`Project:` path is this project (a restart or a rebuild after compaction) and refuses one that
+belongs to another project. It migrates an old in-project `pending-decisions.md`: it stops its
+watcher, appends ANSWERED items to the archive, copies OPEN items unchanged and in order into
+the live ledger, and renames the old file last. A rerun after a crash copies no item twice. An
+operator save during the migration makes it exit 3 with nothing written.
+
+`close <supervisor-dir>` stops the watcher, moves the live ledger to
+`pending-decisions.final.md` (with a time suffix when that name is taken) and points
+`ledger.path` at it, so `list` and `line` still work. `~/supervisor` then holds only the
+ledgers of running supervisors.
+
+## Who writes it
+
 The supervisor changes it only through `scripts/pending-watch.sh add`, `record` and `seen`,
 never with Edit, Write or a hand-made heredoc. The one exception is a `Conflict:` line (below),
 written from Bash with `pending-watch.sh synced <dir>` in the same call.
@@ -36,11 +71,9 @@ Seen: [ ]
 Answer:
 ```
 
-The file starts with one title line, `# Pending decisions`, followed by items in order of
-`D<n>`. `add` writes the header, `Seen: [ ]` and `Answer:`; you pipe it the scope on the first
+The file starts with the header above, followed by items in order of `D<n>`. `add` writes the header, `Seen: [ ]` and `Answer:`; you pipe it the scope on the first
 line and the question, options and `Chặn:` below it. Once an answer is recorded, `record`
-moves the item to `pending-decisions.archive.md` in the same folder, so the live file holds
-only OPEN items. Numbers are never reused: `add` numbers past the highest `D<n>` in the live
+moves the item to the archive, so the live file holds only OPEN items. Numbers are never reused: `add` numbers past the highest `D<n>` in the live
 file and the archive, because `D<n>` codes are what the operator types.
 
 ## Fields
@@ -154,6 +187,8 @@ Answer: 2026-11-17 11:52 (file) A, nhưng ghi số đo vào report
 
 ```bash
 W=<skill-dir>/scripts/pending-watch.sh
+$W init   <supervisor-dir> --session <name>   # prints the live ledger path; migrates an old ledger
+$W close  <supervisor-dir>   # stop the watcher, move the ledger to pending-decisions.final.md
 $W watch  <supervisor-dir>   # run_in_background; exits 0 with "user-edit" on an operator edit
 $W add    <supervisor-dir> <<'EOF'   # prints the new D<n>
 M5
@@ -168,7 +203,7 @@ $W synced <supervisor-dir>   # accept the file as is: after a hand-written Confl
                              # call), or before restarting the watcher after a user-edit exit
 $W answers <supervisor-dir>  # full block of each OPEN item with an answer; nothing when none
 $W list   <supervisor-dir>   # one line per OPEN item: D<n> · <scope> · unseen|seen|answered · <question>
-$W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 mới) → /abs/pending-decisions.md"
+$W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 mới) → /Users/me/supervisor/atoria--atoria-sup.md"
 $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
 
@@ -198,8 +233,8 @@ it. CRLF line endings are accepted.
 For a new item, a reminder and a malformed header, the watcher sends a Herdr notification
 (`herdr notification show`). A Herdr notification cannot carry a click action, so when
 `terminal-notifier` is on `PATH` the watcher also sends a desktop notification with the same
-title and body. Its subtitle names the supervisor folder, the last line of its message gives
-the full path, and clicking it opens that folder, where `pending-decisions.md` is. A reminder replaces the earlier desktop notification of the
+title and body. Its subtitle names the ledger file, the last line of its message gives
+its full path, and clicking it opens that file. A reminder replaces the earlier desktop notification of the
 same item. Without `terminal-notifier` only the Herdr notification is sent, and on macOS
 the watcher says so once when it starts (`pending-watch: terminal-notifier not found …`). When
 `terminal-notifier` fails, most often because macOS has notifications switched off for it

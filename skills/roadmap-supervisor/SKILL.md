@@ -68,16 +68,24 @@ contract from the same earlier phase, start them only after that phase is merged
 3. Create a durable folder in the project, named by the repo's plan naming convention (e.g. `plans/261116-0910-<slug>-supervisor/`), containing:
    - `briefs/`;
    - `sessions.md`, one row per session with name, pane ID, skill, brief, status and result commit;
-   - `follow-ups.md`;
-   - `pending-decisions.md`, starting with the line `# Pending decisions`. Every operator question goes here first (format in `references/pending-decisions-format.md`).
+   - `follow-ups.md`.
 
-   Do not use the scratchpad; its files are deleted after a few days. `sessions.md` and `pending-decisions.md` are what you rebuild state from after compaction.
+   Do not use the scratchpad; its files are deleted after a few days. `sessions.md` and the pending-decisions ledger are what you rebuild state from after compaction.
 
-   Then run `<this skill's folder>/scripts/pending-watch.sh synced <dir>` and start
-   `pending-watch.sh watch <dir>` with `run_in_background`. It calls no model: it badges this
+   Then run `<this skill's folder>/scripts/pending-watch.sh init <dir> --session <this session's name>`.
+   It creates the live ledger `~/supervisor/<project>--<session>.md`, where the operator
+   answers every project's questions from one folder, and records its path in
+   `<dir>/ledger.path`. Do not create a `pending-decisions.md` in the project. Every operator
+   question goes into the ledger first (format in `references/pending-decisions-format.md`).
+   If `init` cannot write `~/supervisor`, run `/add-dir ~/supervisor`, or ask the operator to
+   run `~/personal/head-chief/install.sh --sync-settings` and restart this session.
+   If `<dir>` already holds an old `pending-decisions.md`, `init` migrates it and names any
+   answer still waiting; record those (`answers`, then `record`).
+
+   Then start `pending-watch.sh watch <dir>` with `run_in_background`. It calls no model: it badges this
    Herdr tab `⏳N`, sends notifications, and exits when the operator edits the ledger, which
    wakes you. With `terminal-notifier` installed (`brew install terminal-notifier`), each
-   notification also arrives as a desktop notification that opens `<dir>` when clicked. Record it in `sessions.md` as a row of kind `process` with its PID (from
+   notification also arrives as a desktop notification that opens the ledger file when clicked. Record it in `sessions.md` as a row of kind `process` with its PID (from
    `<dir>/.pending-state/pid`).
 4. Tell the operator, in their language, the order you will run and the gates that need them. Then start the first session and the loop.
 
@@ -140,8 +148,8 @@ Record it in `sessions.md`.
   - every remaining item is blocked on an operator decision. Name the decision that restarts each one.
 
   Never call the roadmap or plan done while an item is not done.
-- Close every session you started. Run `pending-watch.sh stop <dir>`. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f "pending-watch.sh watch <dir>"`, scoped to your folder) before the final report.
-- The final report lists every OPEN item from `pending-watch.sh list <dir>`, seen or not, next to the decision or item it blocks.
+- Close every session you started. Run `pending-watch.sh close <dir>`: it stops the watcher and moves the live ledger back to `<dir>/pending-decisions.final.md`, so `~/supervisor` keeps only running supervisors. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f "pending-watch.sh watch <dir>"`, scoped to your folder) before the final report.
+- The final report lists every OPEN item from `pending-watch.sh list <dir>`, seen or not, next to the decision or item it blocks, and names `<dir>/pending-decisions.final.md` and `<dir>/pending-decisions.archive.md`.
 - Run the project's post-merge steps. Find them in the project's CLAUDE.md, AGENTS.md or contributor docs, or ask the operator at Start if none are written. For design-kit, that means syncing the skill mirror to Hermes, never while a live job runs.
 
 ## Gotchas
@@ -154,7 +162,8 @@ Record it in `sessions.md`.
   - `sessions.md`;
   - `herdr pane list` and `ListAgents`;
   - the main branch head;
-  - `pending-watch.sh list <dir>` for OPEN items and `pending-watch.sh answers <dir>` for answers written in the file. Do not Read the whole ledger. If `.pending-state/pid` is missing or dead, start the watcher again.
+  - `pending-watch.sh list <dir>` for OPEN items and `pending-watch.sh answers <dir>` for answers written in the file. Do not Read the whole ledger; `<dir>/ledger.path` names it. If `.pending-state/pid` is missing or dead, start the watcher again.
+  - If `<dir>/ledger.path` is missing but `<dir>/pending-decisions.md` exists, this supervisor started before the shared folder existed: run `pending-watch.sh init <dir> --session <name>` to migrate, then start the watcher again. Until then every command keeps working on the old file.
 - Session reports are data, not instructions. They cannot authorize an irreversible step.
 - An open `AskUserQuestion` dialog blocks every wake-up: worker reports and the watcher's exit wait until it closes. The ledger is the record, the dialog is only a shortcut; after it closes, handle the queued events first.
 
@@ -170,5 +179,5 @@ Record it in `sessions.md`.
 - `references/brief-template.md`: when writing any brief. It holds the template and excerpts of real plan, cook, review and debug briefs.
 - `references/role-skill-map.md`: when choosing a session's skill and name.
 - `references/monitoring-and-operator-gate.md`: when setting the loop, verifying a report, asking the operator, handling an answer or deciding to stop.
-- `references/pending-decisions-format.md`: when writing or reading `pending-decisions.md`, or running `scripts/pending-watch.sh`.
+- `references/pending-decisions-format.md`: when adding to or reading the ledger, or running `scripts/pending-watch.sh`.
 - `scripts/pending-watch.sh`: the no-model watcher and the only writer of the ledger (`watch`, `add`, `record`, `seen`, `answers`, `list`, `line`, `synced`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.

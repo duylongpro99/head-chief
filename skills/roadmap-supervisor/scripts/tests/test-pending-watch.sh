@@ -7,6 +7,8 @@ SCRIPT="$HERE/../pending-watch.sh"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/pending-watch-test.XXXXXX")"
 export PENDING_POLL_SECONDS=1 PENDING_RENOTIFY_SECONDS=3
 export HERDR_STUB_LOG="$ROOT/herdr.log"
+# Never touch the operator's real ~/supervisor.
+export SUPERVISOR_HOME="$ROOT/supervisor"
 
 mkdir -p "$ROOT/bin"
 cat > "$ROOT/bin/herdr" <<'EOF'
@@ -185,16 +187,16 @@ if [ "$recorded" = "$owner" ] && wait_for 10 dead "$WPID" \
 else fail "watcher exits and restores the label when its Claude owner dies" "owner=$owner recorded=$recorded out=$(cat "$D/watch.out")"; kill "$WPID" 2>/dev/null; fi
 WPID=""
 
-# 12. Each notification also goes out as a clickable one that opens the supervisor folder.
+# 12. Each notification also goes out as a clickable one that opens the ledger file.
 total=$((total + 1)); new_case $'click m\xe1\xbb\x9f'; start_watch
 printf '## D1 · M5 · OPEN · 2026-11-17 11:40\n[M5] judge model?\nSeen: [ ]\nAnswer:\n' | sup_write
 real="$(cd "$D" && pwd -P)"
-url="file://$(cd "$ROOT" && pwd -P)/click%20m%E1%BB%9F"
-if wait_for 10 logged "terminal-notifier -title ⏳ D1 mới -subtitle Bấm để mở ${real##*/} -message \\[M5] judge model?" \
-   && logged "📂 $real -open $url -group pending-watch:$real:D1" \
+url="file://$(cd "$ROOT" && pwd -P)/click%20m%E1%BB%9F/pending-decisions.md"
+if wait_for 10 logged "terminal-notifier -title ⏳ D1 mới -subtitle Bấm để mở pending-decisions.md -message \\[M5] judge model?" \
+   && logged "📂 $real/pending-decisions.md -open $url -group pending-watch:$real:D1" \
    && logged "notification show ⏳ D1 mới --body [M5] judge model? --sound request"; then
-  ok "clickable notification opens the supervisor folder"
-else fail "clickable notification opens the supervisor folder" "url=$url log=$(cat "$HERDR_STUB_LOG")"; fi
+  ok "clickable notification opens the ledger file"
+else fail "clickable notification opens the ledger file" "url=$url log=$(cat "$HERDR_STUB_LOG")"; fi
 stop_watch
 
 # 13. Without terminal-notifier the Herdr notification is still sent.
@@ -332,6 +334,104 @@ if [ "$rc" = 0 ] && [ "$("$SCRIPT" line "$D")" = "⏳ 1 đang chờ bạn (D2 m�
    && "$SCRIPT" seen "$D" D9 > /dev/null 2>&1; [ "$?" = 1 ]; then
   ok "seen marks the item; conflicting and unknown items are refused"
 else fail "seen marks the item; conflicting and unknown items are refused" "rc=$rc rc2=$rc2 line=$("$SCRIPT" line "$D")"; fi
+
+# Phase helpers for the shared folder: a git project with a supervisor folder inside it.
+new_project() { # new_project <name>: sets P (project root) and D (supervisor folder, no ledger)
+  P="$ROOT/projects/$1"; D="$P/plans/sup"
+  mkdir -p "$D"; git -C "$P" init -q
+  : > "$HERDR_STUB_LOG"
+}
+SH="$SUPERVISOR_HOME"
+
+# 25. init writes the shared ledger with its header and ledger.path; watch and line use it.
+total=$((total + 1)); new_project alpha
+out="$("$SCRIPT" init "$D" --session alpha-sup 2>&1)"; rc=$?
+F="$SH/alpha--alpha-sup.md"
+RP="$(cd "$P" && pwd -P)"; RD="$(cd "$D" && pwd -P)"
+if [ "$rc" = 0 ] && [ "$out" = "$F" ] && [ "$(cat "$D/ledger.path")" = "$F" ] \
+   && [ "$(sed -n 1p "$F")" = "# Pending decisions" ] \
+   && [ "$(sed -n 2p "$F")" = "Project: alpha · $RP" ] \
+   && [ "$(sed -n 3p "$F")" = "Supervisor: alpha-sup · Herdr tab W:t1 · pane W:p1" ] \
+   && sed -n 4p "$F" | grep -qE "^Started: [0-9-]{10} [0-9:]{5} · Archive: $RD/pending-decisions.archive.md$" \
+   && [ ! -e "$D/pending-decisions.md" ]; then
+  start_watch
+  printf 'M1\nCâu hỏi: shared?\n' | "$SCRIPT" add "$D" > /dev/null
+  if wait_for 10 logged "tab rename W:t1 sup ⏳1" && logged "-open file://$F" \
+     && [ "$("$SCRIPT" line "$D")" = "⏳ 1 đang chờ bạn (D1) → $F" ] && grep -q '^## D1 · M1 · OPEN' "$F"; then
+    ok "init creates the shared ledger and every command uses it"
+  else fail "init creates the shared ledger and every command uses it" "log=$(cat "$HERDR_STUB_LOG")"; fi
+  stop_watch
+else fail "init creates the shared ledger and every command uses it" "rc=$rc out=$out file=$(cat "$F" 2>/dev/null)"; fi
+
+# 26. init again for the same project reuses the file; another project with the same names is refused.
+total=$((total + 1))
+before="$(shasum -a 256 < "$F")"
+out="$("$SCRIPT" init "$D" --session alpha-sup 2>&1)"; rc=$?
+P1="$P"; new_project other; mkdir -p "$ROOT/projects/other2"; mv "$P" "$ROOT/projects/other2/alpha"
+D="$ROOT/projects/other2/alpha/plans/sup"
+out2="$("$SCRIPT" init "$D" --session alpha-sup 2>&1)"; rc2=$?
+if [ "$rc" = 0 ] && [ "$(shasum -a 256 < "$F")" = "$before" ] && [ "$rc2" = 1 ] \
+   && printf '%s' "$out2" | grep -qF "belongs to $RP" && [ ! -e "$D/ledger.path" ]; then
+  ok "init reuses its own file and refuses another project's"
+else fail "init reuses its own file and refuses another project's" "rc=$rc rc2=$rc2 out2=$out2"; fi
+
+# 27. init migrates an old in-project ledger and stops its watcher.
+total=$((total + 1)); new_project migrate
+printf '# Pending decisions\n\n' > "$D/pending-decisions.md"
+{ item 1 ANSWERED ' ' '2026-11-17 12:00 (chat) A'; item 2 OPEN ' ' ''; item 3 OPEN x ''; item 4 OPEN ' ' 'B'; } >> "$D/pending-decisions.md"
+"$SCRIPT" synced "$D" > /dev/null
+start_watch
+oldpid="$WPID"
+out="$("$SCRIPT" init "$D" --session mig-sup --tab T9 --pane P9 2>&1)"; rc=$?
+wait "$oldpid" 2>/dev/null; WPID=""
+F="$SH/migrate--mig-sup.md"
+expected_open="$(item 2 OPEN ' ' ''; item 3 OPEN x ''; item 4 OPEN ' ' 'B' | sed '$d')"
+A="$D/pending-decisions.archive.md"
+if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | tail -n 1)" = "$F" ] \
+   && [ "$(tail -n +6 "$F")" = "$expected_open" ] && [ "$(sed -n 3p "$F")" = "Supervisor: mig-sup · Herdr tab T9 · pane P9" ] \
+   && [ "$(grep -c '^## D' "$A")" = 1 ] && grep -q '^## D1 · M5 · ANSWERED' "$A" \
+   && [ -f "$D/pending-decisions.md.migrated" ] && [ ! -e "$D/pending-decisions.md" ] \
+   && dead "$oldpid" && printf '%s' "$out" | grep -qF "answered but not recorded yet: D4" \
+   && [ "$("$SCRIPT" answers "$D")" = "$(item 4 OPEN ' ' 'B' | sed '$d')" ]; then
+  ok "init migrates an old ledger: OPEN to the shared file, ANSWERED to the archive"
+else fail "init migrates an old ledger: OPEN to the shared file, ANSWERED to the archive" "rc=$rc out=$out shared=$(cat "$F" 2>/dev/null)"; kill "$oldpid" 2>/dev/null; fi
+
+# 28. A migration interrupted before the rename duplicates nothing when run again.
+total=$((total + 1))
+mv "$D/pending-decisions.md.migrated" "$D/pending-decisions.md"; rm -f "$D/ledger.path"
+out="$("$SCRIPT" init "$D" --session mig-sup 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && [ "$(grep -c '^## D' "$A")" = 1 ] && [ "$(grep -c '^## D' "$F")" = 3 ] \
+   && [ "$(tail -n +6 "$F")" = "$expected_open" ] && [ -f "$D/pending-decisions.md.migrated" ]; then
+  ok "a repeated migration duplicates no item"
+else fail "a repeated migration duplicates no item" "rc=$rc out=$out shared=$(cat "$F")"; fi
+
+# 29. A migration that meets an operator save writes nothing and exits 3.
+total=$((total + 1)); new_project migrate-race
+printf '# Pending decisions\n\n' > "$D/pending-decisions.md"; item 1 OPEN ' ' '' >> "$D/pending-decisions.md"
+out="$(PENDING_TEST_BEFORE_SWAP='printf "x\n" >> "$LEDGER"' "$SCRIPT" init "$D" --session r 2>&1)"; rc=$?
+if [ "$rc" = 3 ] && [ -f "$D/pending-decisions.md" ] && [ ! -e "$SH/migrate-race--r.md" ] \
+   && [ ! -e "$D/ledger.path" ] && [ -z "$(ls -A "$SH" | grep '^\.pending-')" ]; then
+  ok "a migration that meets an operator save writes nothing"
+else fail "a migration that meets an operator save writes nothing" "rc=$rc out=$out sh=$(ls -A "$SH")"; fi
+
+# 30. close moves the ledger back into the project; list and record keep working on it.
+total=$((total + 1)); new_project closing
+"$SCRIPT" init "$D" --session c > /dev/null
+F="$SH/closing--c.md"
+printf 'M2\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null
+printf 'M2\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null
+"$SCRIPT" record "$D" D2 chat 'A' > /dev/null
+start_watch
+out="$("$SCRIPT" close "$D" 2>/dev/null)"; rc=$?
+wait "$WPID" 2>/dev/null; WPID=""
+FINAL="$(cd "$D" && pwd -P)/pending-decisions.final.md"
+if [ "$rc" = 0 ] && [ "$out" = "$FINAL" ] && [ ! -e "$F" ] && [ -f "$FINAL" ] \
+   && [ "$(cat "$D/ledger.path")" = "$FINAL" ] && [ ! -f "$D/.pending-state/pid" ] \
+   && [ "$("$SCRIPT" list "$D")" = "D1 · M2 · unseen · Câu hỏi: still open?" ] \
+   && grep -q '^## D2 · M2 · ANSWERED' "$D/pending-decisions.archive.md" \
+   && [ "$("$SCRIPT" close "$D")" = "$FINAL" ]; then
+  ok "close moves the ledger back and list still reads it"
+else fail "close moves the ledger back and list still reads it" "rc=$rc out=$out sh=$(ls -A "$SH")"; fi
 
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

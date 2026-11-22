@@ -67,7 +67,7 @@ This repo ships five skills that work together. Install only what you need.
 | **`managed-session`** | Start or stop a Claude Code session as a Herdr pane (default, needs `HERDR_ENV=1`) or a herdr core terminal (`--hc`, needs `hc`). Each session's auto-compact window defaults to 400k tokens (`--compact-window` to change it). The chief uses this to spawn staff. |
 | **`pr-review-loop`** | Have a separate session review your GitHub PRs and loop review → verify/fix → re-review until approved. Cook mode (run by the implementer), reviewer mode (finds and wakes or restores the implementer session) and `--review-only`. |
 | **`envoy-peer`** | Hand one task with acceptance criteria to a different agent CLI (codex, grok, omp, agy, …) in its own Herdr pane, have an independent reviewer pane check it, and loop fix → re-review until accepted. Only the status, a short summary and file paths come back. |
-| **`roadmap-supervisor`** | Drive a roadmap of milestones, or one plan of phases, to completion through single-purpose worker sessions (plan, cook, review, debug), each with a brief file. Relays your decisions through a `pending-decisions.md` ledger and closes every session it opened. Needs `managed-session`. |
+| **`roadmap-supervisor`** | Drive a roadmap of milestones, or one plan of phases, to completion through single-purpose worker sessions (plan, cook, review, debug), each with a brief file. Relays your decisions through a ledger in `~/supervisor` and closes every session it opened. Needs `managed-session`. |
 
 The repo also holds two standalone skills outside the orchestration group: `ak-proposal-review` (review a proposal as a local HTML draft with per-section feedback) and `ui-paper-pencil-design` (the paper-and-pencil page style used in the intro video).
 
@@ -100,6 +100,8 @@ The session writes a brief with acceptance criteria, opens the envoy in a Herdr 
 ### Supervise a roadmap
 
 Ask a session to "supervise the roadmap" (or run `/roadmap-supervisor`). It shapes the work, opens one worker session per job, picks the skill for each role, and asks you only when a decision is genuinely yours.
+
+Every question it asks you also lands in a ledger file in one shared folder, `~/supervisor/<project>--<session>.md`, so you can answer all running supervisors from one place: write after `Answer:` and save, or type `D3: A` in the supervisor's chat. The supervisor reads only the newly answered items, moves each recorded answer into the project's `pending-decisions.archive.md`, and on stopping moves the ledger back to the project as `pending-decisions.final.md`. The folder needs per-repo access, which `install.sh --project` grants (see [Install options](#install-options)). The ledger commands (`init`, `add`, `answers`, `record`, `seen`, `list`, `close`) are in [`pending-decisions-format.md`](skills/roadmap-supervisor/references/pending-decisions-format.md).
 
 ## Requirements
 
@@ -175,7 +177,7 @@ skills/
   roadmap-supervisor/
     SKILL.md               # Supervisor flow: shape, start, briefs, monitoring, operator gate, cleanup
     references/            # brief-template, role-skill-map, monitoring-and-operator-gate, pending-decisions-format
-    scripts/               # pending-watch.sh (no-model ledger watcher) and its tests
+    scripts/               # pending-watch.sh (no-model ledger watcher and writer) and its tests
   ak-proposal-review/      # Standalone: local HTML proposal review
   ui-paper-pencil-design/  # Standalone: paper-and-pencil page style
 assets/                    # README intro video (MP4 + GIF preview)

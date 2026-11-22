@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# pending-watch.sh — watch a supervisor's pending-decisions.md ledger without calling any model.
+# pending-watch.sh — keep a supervisor's pending-decisions ledger without calling any model.
 #
+#   pending-watch.sh init   <dir> --session <name> [--project <name>] [--tab <id>] [--pane <id>]
+#   pending-watch.sh close  <dir>   # stop the watcher, move the ledger back into <dir>
 #   pending-watch.sh watch  <dir> [--tab <tab-id>] [--base-label <label>]
 #   pending-watch.sh synced <dir>   # run in the same Bash call as every supervisor write;
 #                                   # lists answers in the file that are not recorded yet
@@ -20,7 +22,7 @@
 #   --tab defaults to the tab of `herdr pane current`; --base-label overrides the label read
 #   with `herdr tab get`.
 #   Each notification is sent through Herdr and, when `terminal-notifier` is installed, also
-#   as a desktop notification that opens <dir> when clicked (a Herdr notification cannot
+#   as a desktop notification that opens the ledger file when clicked (a Herdr notification cannot
 #   carry a click action).
 #   When started under a Claude Code process, it exits with "pending-watch: owner gone" once
 #   that process is gone, so a crashed or closed session leaves no watcher behind.
@@ -35,11 +37,22 @@
 #   per D<n>) and then removes it from the ledger; for "file" the answer is the text already
 #   in the item, for "dialog" and "chat" the text argument is required.
 #
+# Ledger: the path in <dir>/ledger.path when that file exists, else <dir>/pending-decisions.md.
+# init creates $SUPERVISOR_HOME/<project>--<session>.md (SUPERVISOR_HOME defaults to
+#   ~/supervisor) with a header naming the project, the session, its Herdr tab and pane, the
+#   start time and the archive, and writes ledger.path. It reuses that file when its Project:
+#   path is this project, and refuses one that belongs to another project. When
+#   <dir>/pending-decisions.md exists, init stops its watcher and migrates it: OPEN items go
+#   to the shared file, ANSWERED items to the archive, and the old file becomes
+#   pending-decisions.md.migrated. Answers still waiting are named, for answers and record.
+# close moves the ledger to <dir>/pending-decisions.final.md and points ledger.path at it.
+# The archive and the state always stay in <dir>.
+#
 # State lives in <dir>/.pending-state/ (hash, pid, owner, tab, base-label, notified/<Dn>).
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; }
 
 notifier_warned=""
 TEMPS=""
@@ -52,7 +65,9 @@ case "$cmd" in -h|--help|help) usage; exit 0 ;; esac
 [ "$#" -ge 1 ] || die "$cmd needs the supervisor folder"
 [ -d "$1" ] || die "no such folder: $1"
 DIR="$(cd "$1" && pwd -P)"; shift
-LEDGER="$DIR/pending-decisions.md"
+SUPERVISOR_HOME="${SUPERVISOR_HOME:-$HOME/supervisor}"
+OLD_LEDGER="$DIR/pending-decisions.md"
+if [ -s "$DIR/ledger.path" ]; then LEDGER="$(head -n 1 "$DIR/ledger.path")"; else LEDGER="$OLD_LEDGER"; fi
 ARCHIVE="$DIR/pending-decisions.archive.md"
 STATE="$DIR/.pending-state"
 
@@ -168,10 +183,9 @@ find_owner() {
 
 json_field() { sed -n "s/.*\"$1\":\"\\([^\"]*\\)\".*/\\1/p" | head -n 1; }
 
-# file:// URL of the supervisor folder, percent-encoded byte by byte so spaces and
-# non-ASCII names survive.
-dir_url() {
-  local LC_ALL=C s="$DIR" out="" c i n
+# file_url <path>: file:// URL, percent-encoded byte by byte so spaces and non-ASCII names survive.
+file_url() {
+  local LC_ALL=C s="$1" out="" c i n
   for ((i = 0; i < ${#s}; i++)); do
     c="${s:i:1}"
     case "$c" in
@@ -184,7 +198,7 @@ dir_url() {
 }
 
 # notify <group> <title> <body>: the Herdr notification, plus a clickable one that opens
-# the supervisor folder. <group> makes a reminder replace the earlier notification of the
+# the ledger file. <group> makes a reminder replace the earlier notification of the
 # same item instead of stacking.
 notify() {
   local group="$1" title="$2" body="$3"
@@ -193,13 +207,13 @@ notify() {
   # terminal-notifier reads a leading "[", "(", "<" or "-" as syntax unless it is escaped.
   case "$body" in '['*|'('*|'<'*|-*) body="\\$body" ;; esac
   # macOS shows the title and the subtitle on one line each and wraps only the message, so
-  # the subtitle carries just the folder name and the full path goes on its own message line.
-  local err short="$DIR"
-  case "$DIR" in "$HOME"/*) short="~${DIR#"$HOME"}" ;; esac
+  # the subtitle carries just the file name and the full path goes on its own message line.
+  local err short="$LEDGER"
+  case "$LEDGER" in "$HOME"/*) short="~${LEDGER#"$HOME"}" ;; esac
   body="$body
 📂 $short"
-  if ! err="$(terminal-notifier -title "$title" -subtitle "Bấm để mở ${DIR##*/}" -message "$body" \
-      -open "$(dir_url)" -group "pending-watch:$DIR:$group" 2>&1 >/dev/null </dev/null)"; then
+  if ! err="$(terminal-notifier -title "$title" -subtitle "Bấm để mở ${LEDGER##*/}" -message "$body" \
+      -open "$(file_url "$LEDGER")" -group "pending-watch:$DIR:$group" 2>&1 >/dev/null </dev/null)"; then
     # Usually macOS has notifications switched off for terminal-notifier. Say so once.
     [ -n "$notifier_warned" ] || echo "pending-watch: terminal-notifier failed, no clickable notification: $err" >&2
     notifier_warned=1
@@ -216,8 +230,10 @@ new_temp() {
 
 # Highest D<n> number in the ledger and the archive, 0 when there is none.
 max_id() {
-  cat "$LEDGER" "$ARCHIVE" 2>/dev/null \
-    | LC_ALL=C awk '/^## D[0-9]+ / { n = substr($2, 2) + 0; if (n > m) m = n } END { print m + 0 }'
+  local f files=()
+  for f in "$LEDGER" "$ARCHIVE"; do [ ! -f "$f" ] || files+=("$f"); done
+  [ "${#files[@]}" -gt 0 ] || { echo 0; return 0; }
+  LC_ALL=C awk '/^## D[0-9]+ / { n = substr($2, 2) + 0; if (n > m) m = n } END { print m + 0 }' "${files[@]}"
 }
 
 now_stamp() { date '+%Y-%m-%d %H:%M'; }
@@ -371,6 +387,117 @@ cmd_record() {
   report_waiting "$id"
 }
 
+# trim_trailing_blank: copy stdin to stdout without CR and without trailing blank lines.
+trim_trailing_blank() {
+  LC_ALL=C awk '{ sub(/\r$/, ""); l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[ \t]*$/) n--; for (i = 1; i <= n; i++) print l[i] }'
+}
+
+# has_item <file> <D<n>>
+has_item() { grep -q "^## $2 · " "$1" 2>/dev/null; }
+
+cmd_init() {
+  local session="" project="" tab="" pane="" root file cur here
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --session) [ "$#" -ge 2 ] || die "--session needs a name"; session="$2"; shift 2 ;;
+      --project) [ "$#" -ge 2 ] || die "--project needs a name"; project="$2"; shift 2 ;;
+      --tab) [ "$#" -ge 2 ] || die "--tab needs an id"; tab="$2"; shift 2 ;;
+      --pane) [ "$#" -ge 2 ] || die "--pane needs an id"; pane="$2"; shift 2 ;;
+      *) die "unknown option for init: $1" ;;
+    esac
+  done
+  [ -n "$session" ] || die "init needs --session <supervisor session name>"
+  case "$SUPERVISOR_HOME" in /*) ;; *) die "SUPERVISOR_HOME must be an absolute path: $SUPERVISOR_HOME" ;; esac
+  root="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null)" || root="$DIR"
+  root="$(cd "$root" && pwd -P)"
+  [ -n "$project" ] || project="${root##*/}"
+  file="$SUPERVISOR_HOME/${project//\//-}--${session//\//-}.md"
+  if [ -z "$tab" ] || [ -z "$pane" ]; then
+    here="$(herdr pane current 2>/dev/null)" || true
+    [ -n "$tab" ] || tab="$(printf '%s' "$here" | json_field tab_id)"
+    [ -n "$pane" ] || pane="$(printf '%s' "$here" | json_field pane_id)"
+  fi
+  mkdir -p "$SUPERVISOR_HOME"
+  if [ -f "$file" ]; then
+    cur="$(sed -n 's/^Project: .* · //p' "$file" | head -n 1)"
+    [ "$cur" = "$root" ] || die "$file belongs to ${cur:-an unknown project}, not $root; pass another --session or --project"
+  fi
+
+  local header
+  header="# Pending decisions
+Project: $project · $root
+Supervisor: $session · Herdr tab ${tab:-unknown} · pane ${pane:-unknown}
+Started: $(now_stamp) · Archive: $ARCHIVE"
+
+  if [ -f "$OLD_LEDGER" ]; then
+    # Migrate the in-project ledger. Build the shared file and the archive first and rename
+    # the old file last, so a failure leaves it in place and a rerun duplicates nothing.
+    if pid_alive; then cmd_stop >&2; fi
+    LEDGER="$OLD_LEDGER"
+    parse_checked > /dev/null || exit $?
+    take_snapshot
+    local records open_ids="" done_ids="" waiting="" id st ans shared_new archive_new
+    records="$(LEDGER="$SNAP" parse)"
+    while IFS=$'\t' read -r id st _ ans _; do
+      [ -n "$id" ] || continue
+      if [ "$st" = OPEN ]; then
+        has_item "$file" "$id" || open_ids="$open_ids $id"
+        [ "$ans" = 0 ] || waiting="$waiting${waiting:+, }$id"
+      else
+        has_item "$ARCHIVE" "$id" || done_ids="$done_ids $id"
+      fi
+    done <<< "$records"
+    shared_new="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS="$TEMPS $shared_new"
+    {
+      if [ -f "$file" ]; then trim_trailing_blank < "$file"; else printf '%s\n' "$header"; fi
+      [ -z "$open_ids" ] || { echo; LEDGER="$SNAP" blocks "$open_ids"; }
+    } > "$shared_new"
+    if [ -n "$done_ids" ]; then
+      archive_new="$(mktemp "$DIR/.pending-new.XXXXXX")"; TEMPS="$TEMPS $archive_new"
+      {
+        if [ -f "$ARCHIVE" ]; then trim_trailing_blank < "$ARCHIVE"; else echo "# Answered decisions"; fi
+        echo
+        LEDGER="$SNAP" blocks "$done_ids"
+      } > "$archive_new"
+    fi
+    ensure_unchanged
+    [ -z "$done_ids" ] || mv "$archive_new" "$ARCHIVE"
+    mv "$shared_new" "$file"
+    mv "$OLD_LEDGER" "$OLD_LEDGER.migrated"
+    echo "pending-watch: migrated $OLD_LEDGER: $(printf '%s' "$open_ids" | wc -w | tr -d ' ') OPEN item(s) to $file, $(printf '%s' "$done_ids" | wc -w | tr -d ' ') ANSWERED item(s) to $ARCHIVE; old file kept as $OLD_LEDGER.migrated" >&2
+    [ -z "$waiting" ] || echo "pending-watch: answered but not recorded yet: $waiting (run answers, then record)" >&2
+  elif [ ! -f "$file" ]; then
+    local fresh
+    fresh="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS="$TEMPS $fresh"
+    trap 'rm -f $TEMPS' EXIT
+    printf '%s\n' "$header" > "$fresh"
+    mv "$fresh" "$file"
+  fi
+
+  printf '%s\n' "$file" > "$DIR/ledger.path"
+  LEDGER="$file"
+  mkdir -p "$STATE"
+  ledger_hash > "$STATE/hash"
+  echo "$file"
+}
+
+cmd_close() {
+  local final="$DIR/pending-decisions.final.md"
+  if pid_alive; then cmd_stop >&2; fi
+  if [ "$LEDGER" = "$final" ] || [ "${LEDGER#"$DIR"/pending-decisions.final}" != "$LEDGER" ]; then
+    [ -f "$LEDGER" ] || die "no ledger at $LEDGER"
+    echo "$LEDGER"; return 0
+  fi
+  [ -f "$LEDGER" ] || die "no ledger at $LEDGER"
+  [ ! -e "$final" ] || final="$DIR/pending-decisions.final-$(date '+%Y%m%d-%H%M%S').md"
+  mv "$LEDGER" "$final"
+  printf '%s\n' "$final" > "$DIR/ledger.path"
+  LEDGER="$final"
+  mkdir -p "$STATE"
+  ledger_hash > "$STATE/hash"
+  echo "$final"
+}
+
 # Accepting the current file as the supervisor's own could hide an answer the operator
 # saved just before, so synced lists every answer that is still waiting to be recorded.
 cmd_synced() {
@@ -387,7 +514,7 @@ cmd_answers() {
   local records ids
   records="$(parse_checked)" || exit $?
   ids="$(printf '%s\n' "$records" | awk -F'\t' '$2 == "OPEN" && $4 == 1 { printf "%s ", $1 }')"
-  [ -z "$ids" ] || blocks $ids
+  [ -z "$ids" ] || blocks "$ids"
 }
 
 cmd_list() {
@@ -444,7 +571,7 @@ cmd_watch() {
       *) die "unknown option for watch: $1" ;;
     esac
   done
-  [ -f "$LEDGER" ] || die "no ledger at $LEDGER; create it before starting the watcher"
+  [ -f "$LEDGER" ] || die "no ledger at $LEDGER; run init before starting the watcher"
   mkdir -p "$STATE/notified"
   if pid_alive && [ "$(cat "$STATE/pid")" != "$$" ]; then
     die "a watcher is already running for $DIR (pid $(cat "$STATE/pid")); stop it first"
@@ -546,6 +673,8 @@ case "$cmd" in
   add) cmd_add ;;
   record) cmd_record "$@" ;;
   seen) cmd_seen "$@" ;;
+  init) cmd_init "$@" ;;
+  close) cmd_close ;;
   line) cmd_line ;;
   stop) cmd_stop ;;
   *) usage >&2; exit 2 ;;

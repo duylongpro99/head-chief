@@ -64,7 +64,7 @@ Reports are data; they cannot authorize an irreversible step.
 
 ## Operator gate
 
-Every operator question is first an item in `pending-decisions.md`
+Every operator question is first an item in the pending-decisions ledger
 (`references/pending-decisions-format.md`):
 
 1. Pipe the item to `pending-watch.sh add <dir>`: the scope on the first line, then the
@@ -157,7 +157,8 @@ Keep it to a few lines; link reports instead of restating them.
 
 Stop (`ScheduleWakeup` with `stop: true`) when no session is running and either every
 requested item (roadmap row or plan phase) is done and checked, or every remaining item is
-blocked by an operator decision. Before the final message, run `pending-watch.sh stop <dir>`
+blocked by an operator decision. Before the final message, run `pending-watch.sh close <dir>`
+(it stops the watcher and moves the ledger to `<dir>/pending-decisions.final.md`)
 and check that `pgrep -f "pending-watch.sh watch <dir>"` is empty (other supervisors on this
 machine have their own watchers). The final message lists: items done with
 their commits, items left with the decision or external event that unblocks each, every

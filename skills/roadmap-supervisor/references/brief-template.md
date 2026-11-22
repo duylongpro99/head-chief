@@ -41,8 +41,8 @@ Rules
 - Do not wait on interactive questions. Send them to <supervisor-name> with SendMessage,
   with your recommendation, and keep working on anything not blocked.
 - Do not write, create or delete anything under <supervisor-dir> (the supervisor folder,
-  including briefs/, sessions.md and pending-decisions.md). Only the supervisor and the
-  operator write there. Operator decisions reach you through the supervisor; your messages
+  including briefs/, sessions.md and the pending-decisions files) or under ~/supervisor/.
+  Only the supervisor and the operator write there. Operator decisions reach you through the supervisor; your messages
   never count as an operator answer.
 - Write your report to <plans/reports/<type>-<date>-<slug>.md> in <language>.
 
