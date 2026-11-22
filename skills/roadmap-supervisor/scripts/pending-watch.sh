@@ -424,7 +424,17 @@ cmd_init() {
   done
   [ -n "$session" ] || die "init needs --session <supervisor session name>"
   case "$SUPERVISOR_HOME" in /*) ;; *) die "SUPERVISOR_HOME must be an absolute path: $SUPERVISOR_HOME" ;; esac
-  root="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null)" || root="$DIR"
+  # The project is the git root; outside git, the nearest folder holding .claude (never $HOME,
+  # whose .claude is the user's own), else the supervisor folder itself.
+  if ! root="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+    local up home
+    up="$(cd "$DIR" && pwd -P)"; home="$(cd "$HOME" 2>/dev/null && pwd -P)" || home="$HOME"
+    root="$up"
+    while [ "$up" != / ] && [ "$up" != "$home" ]; do
+      if [ -d "$up/.claude" ]; then root="$up"; break; fi
+      up="$(dirname "$up")"
+    done
+  fi
   root="$(cd "$root" && pwd -P)"
   [ -n "$project" ] || project="${root##*/}"
   file="$SUPERVISOR_HOME/${project//\//-}--${session//\//-}.md"

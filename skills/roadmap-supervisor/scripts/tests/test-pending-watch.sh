@@ -489,5 +489,15 @@ if [ "$rc" = 3 ] && [ "$out" = "pending-watch: ledger changed; run answers again
   ok "temp files are removed from a folder whose path has a space"
 else fail "temp files are removed from a folder whose path has a space" "rc=$rc out=$out ls=$(ls -A "$D")"; fi
 
+# 36. Outside git, init names the project after the nearest folder holding .claude.
+total=$((total + 1))
+P="$ROOT/plain/nogit-proj"; D="$P/plans/sup"; mkdir -p "$D" "$P/.claude/skills"
+out="$("$SCRIPT" init "$D" --session plain-sup 2>&1)"; rc=$?
+F="$SH/nogit-proj--plain-sup.md"; RP="$(cd "$P" && pwd -P)"
+if [ "$rc" = 0 ] && [ "$out" = "$F" ] && [ "$(sed -n 2p "$F")" = "Project: nogit-proj · $RP" ]; then
+  ok "outside git, init uses the folder holding .claude as the project"
+else fail "outside git, init uses the folder holding .claude as the project" "rc=$rc out=$out"; fi
+"$SCRIPT" close "$D" > /dev/null 2>&1 || true
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]
