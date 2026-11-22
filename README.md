@@ -157,7 +157,7 @@ Installing `roadmap-supervisor` with `--project` also lets that repo's Claude se
 - adds it to `<repo>/.claude/settings.local.json` under `permissions.additionalDirectories`, keeping other keys and the file's mode, and saving the previous file as `settings.local.json.bak` when it changes;
 - records the repo in `~/supervisor/.installs`.
 
-This needs `jq`. Without it, `install.sh` exits 1 and prints the JSON to merge by hand. It refuses a repo where git does not ignore `.claude/settings.local.json` unless you pass `--force`. Only per-repo settings are written, never `~/.claude/settings.json`; a global or `--agents` install only prints a reminder. A Bash sandbox needs no extra entry, because it can write to every directory in `additionalDirectories`.
+This needs `jq`. Without it, `install.sh` exits 1 and prints the JSON to merge by hand. It refuses a repo where git does not ignore `.claude/settings.local.json` unless you pass `--force`. A folder with no git works too: its root is the folder that holds `.claude`. Only per-repo settings are written, never `~/.claude/settings.json`; a global or `--agents` install only prints a reminder. A Bash sandbox needs no extra entry, because it can write to every directory in `additionalDirectories`.
 
 ```bash
 # from the consumer repo root
@@ -229,7 +229,7 @@ To try a skill from this checkout without publishing, link it into a host's skil
 
 ```bash
 ./install.sh                    # ~/.claude/skills/envoy-peer -> skills/envoy-peer
-./install.sh --project          # <git root>/.claude/skills; refused unless git ignores the link
+./install.sh --project          # <git root>/.claude/skills (current folder without git); refused unless git ignores the link
 ./install.sh --uninstall        # remove only links that point into this checkout
 ./install.sh --help             # other destinations, --skill, --force, --dry-run
 ```

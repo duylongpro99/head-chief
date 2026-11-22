@@ -149,5 +149,26 @@ check "missing jq exits 1" [ "$RC" = 1 ]
 check "missing jq prints the JSON to paste" grep -qxF "{\"permissions\":{\"additionalDirectories\":[\"$SUP\"]}}" <<< "$OUT"
 check "missing jq leaves settings alone" [ ! -e "$(settings "$G")" ]
 
+# A folder with no git still gets the skill: nothing there can be committed by accident.
+N="$ROOT/plain/nogit"; mkdir -p "$N/sub"
+in_repo "$N" --project --skill roadmap-supervisor
+check "install in a folder with no git exits 0" [ "$RC" = 0 ]
+check "install in a folder with no git links the skill there" [ -L "$N/.claude/skills/roadmap-supervisor" ]
+check "install in a folder with no git grants the supervisor folder" [ "$(dirs_of "$N")" = "[\"$SUP\"]" ]
+check "install in a folder with no git registers it" registered "$N"
+in_repo "$N" --uninstall --project --skill roadmap-supervisor
+check "uninstall in a folder with no git revokes and unregisters" sh -c '[ ! -L "$1/.claude/skills/roadmap-supervisor" ] && ! grep -qxF -- "$1" "$2/.installs"' _ "$N" "$SUP"
+
+# --scan finds a link in a folder with no git and grants that folder.
+P="$ROOT/scan-plain/proj"; mkdir -p "$P/.claude/skills"
+ln -s "$REPO/skills/roadmap-supervisor" "$P/.claude/skills/roadmap-supervisor"
+install_cmd --sync-settings --scan "$ROOT/scan-plain"
+check "sync --scan reports the grant for a folder with no git" grep -qxF "granted $SUP in $P/.claude/settings.local.json" <<< "$OUT"
+check "sync --scan does not skip a folder with no git" sh -c '! grep -q "not inside a git" <<EOF
+$1
+EOF' _ "$OUT"
+check "sync --scan registers a folder with no git" registered "$P"
+check "sync --scan grants a folder with no git" [ "$(dirs_of "$P")" = "[\"$SUP\"]" ]
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]
