@@ -2,6 +2,7 @@
 # install.sh — symlink skills from this checkout into a host's skill folder (development and testing).
 #
 #   ./install.sh [--skill NAME ...] [--target DIR | --project | --agents] [--uninstall] [--force] [--dry-run]
+#   ./install.sh --sync-settings [--scan DIR ...] [--force] [--dry-run]
 #
 #   --skill NAME   skill under skills/ to link (repeatable; default: envoy-peer). Skills named
 #                  in its SKILL.md frontmatter `metadata.requires` are linked too (one level);
@@ -11,8 +12,19 @@
 #   --project      link into <git root of $PWD>/.claude/skills; refused unless git ignores the link (--force overrides)
 #   --uninstall    remove links that point into this checkout; anything else is left alone.
 #                  Only the named skills: dependencies are never removed
-#   --force        replace an existing symlink that points elsewhere (never a real file or folder)
+#   --force        replace an existing symlink that points elsewhere (never a real file or folder);
+#                  also grants access in a repo where git does not ignore settings.local.json
 #   --dry-run      print the actions without doing them
+#   --sync-settings  grant the supervisor folder to every repo in $SUPERVISOR_HOME/.installs;
+#                  a repo that no longer exists is warned about and kept in the list
+#   --scan DIR     with --sync-settings: first add every repo under DIR (6 levels deep) whose
+#                  .claude/skills/roadmap-supervisor links into this checkout (repeatable)
+#
+# roadmap-supervisor with --project also creates $SUPERVISOR_HOME (default ~/supervisor), adds
+# it to <repo>/.claude/settings.local.json permissions.additionalDirectories (needs jq; the old
+# file is kept as settings.local.json.bak when it changes) and records the repo in
+# $SUPERVISOR_HOME/.installs. --uninstall --project removes that entry and that line only;
+# the folder itself is never deleted. User-scope settings are never written.
 #
 # The links follow this checkout's current HEAD: switching branches here changes the
 # skill for every project that uses the link. Distribution still goes through
@@ -21,9 +33,9 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 die() { echo "install.sh: $*" >&2; exit 1; }
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; }
 
-skills=(); target=""; where=""; uninstall=0; force=0; dry=0
+skills=(); target=""; where=""; uninstall=0; force=0; dry=0; sync=0; scan_dirs=()
 set_where() { [ -z "$where" ] || die "--target, --project and --agents are mutually exclusive"; where="$1"; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -34,11 +46,156 @@ while [ "$#" -gt 0 ]; do
     --uninstall) uninstall=1; shift ;;
     --force) force=1; shift ;;
     --dry-run) dry=1; shift ;;
+    --sync-settings) sync=1; shift ;;
+    --scan) [ "$#" -ge 2 ] || die "--scan needs a folder"; [ -d "$2" ] || die "--scan: no folder $2"; scan_dirs+=("$2"); shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
 done
+if [ "$sync" = 1 ]; then
+  [ "${#skills[@]}" = 0 ] && [ -z "$where" ] && [ "$uninstall" = 0 ] \
+    || die "--sync-settings takes only --scan, --force and --dry-run"
+elif [ "${#scan_dirs[@]}" -gt 0 ]; then
+  die "--scan needs --sync-settings"
+fi
 [ "${#skills[@]}" -gt 0 ] || skills=(envoy-peer)
+
+SUPERVISOR_SKILL=roadmap-supervisor
+SUP="${SUPERVISOR_HOME:-$HOME/supervisor}"
+SUP="${SUP%/}"
+case "$SUP" in /?*) ;; *) die "SUPERVISOR_HOME must be an absolute path (got '$SUP')" ;; esac
+REGISTRY="$SUP/.installs"
+
+# In --dry-run nothing changes on disk and every action line is prefixed "[dry-run]".
+run() { [ "$dry" = 1 ] || "$@"; }
+say() { if [ "$dry" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
+
+# The settings fragment a user without jq merges by hand.
+paste_json() {
+  local d="${SUP//\\/\\\\}"; d="${d//\"/\\\"}"
+  printf '{"permissions":{"additionalDirectories":["%s"]}}\n' "$d"
+}
+
+# Repos registered as having roadmap-supervisor, one absolute path per line.
+registry_add() {
+  if [ -f "$REGISTRY" ] && grep -qxF -- "$1" "$REGISTRY"; then return 0; fi
+  if [ "$dry" = 0 ]; then printf '%s\n' "$1" >> "$REGISTRY"; fi
+  say "registered $1 in $REGISTRY"
+}
+registry_remove() {
+  [ -f "$REGISTRY" ] && grep -qxF -- "$1" "$REGISTRY" || return 0
+  if [ "$dry" = 0 ]; then
+    local tmp; tmp="$(mktemp "$REGISTRY.XXXXXX")"
+    grep -vxF -- "$1" "$REGISTRY" > "$tmp" || true
+    mv "$tmp" "$REGISTRY"
+  fi
+  say "unregistered $1 from $REGISTRY"
+}
+
+# write_settings <file> <jq filter>: apply the filter through a temp file, keeping the old
+# content in <file>.bak. Callers only call it when the content will change.
+write_settings() {
+  local file="$1" filter="$2" tmp
+  [ "$dry" = 1 ] && return 0
+  mkdir -p "$(dirname "$file")"
+  tmp="$(mktemp "$file.XXXXXX")"
+  if [ -f "$file" ]; then
+    jq --arg d "$SUP" "$filter" "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+    cp -p "$file" "$file.bak"
+    # mktemp makes the file 0600; keep the mode the settings file already had.
+    chmod "$(stat -f %Lp "$file" 2>/dev/null || stat -c %a "$file")" "$tmp"
+  else
+    jq --arg d "$SUP" "$filter" <<< '{}' > "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 644 "$tmp"
+  fi
+  mv "$tmp" "$file"
+}
+
+# settings_shape_ok <file>: a JSON object whose permissions (if any) is an object and whose
+# additionalDirectories (if any) is an array, so the jq filters below cannot misfire.
+settings_shape_ok() {
+  jq -e 'type == "object"
+         and ((.permissions // {}) | type == "object")
+         and (((.permissions // {}).additionalDirectories // []) | type == "array")' "$1" > /dev/null 2>&1
+}
+
+# grant_supervisor_dir <root>: let Claude sessions in <root> use $SUP. Sandboxed Bash needs
+# nothing more: additionalDirectories also grants sandbox writes.
+grant_supervisor_dir() {
+  local root="$1" file="$1/.claude/settings.local.json"
+  if ! git -C "$root" check-ignore -q "$file"; then
+    if [ "$force" = 1 ]; then
+      echo "warning: $file is not ignored by git; granting anyway (--force)" >&2
+    else
+      echo "error: $file is not ignored by git and would be committed; add .claude/settings.local.json (or .claude) to $root/.gitignore, or pass --force" >&2
+      return 1
+    fi
+  fi
+  [ -d "$SUP" ] || { run mkdir -p "$SUP"; say "created $SUP"; }
+  registry_add "$root"
+  if ! command -v jq > /dev/null 2>&1; then
+    echo "error: jq is not installed, so $file was not changed. Install jq and rerun, or merge this into it by hand:" >&2
+    paste_json
+    return 1
+  fi
+  if [ -f "$file" ]; then
+    settings_shape_ok "$file" || { echo "error: $file is not a JSON object with permissions.additionalDirectories as a list; fix it by hand" >&2; return 1; }
+    if jq -e --arg d "$SUP" '(.permissions.additionalDirectories // []) | index($d) != null' "$file" > /dev/null; then
+      echo "already granted: $SUP in $file"; return 0
+    fi
+  fi
+  # shellcheck disable=SC2016  # $d is a jq variable
+  write_settings "$file" '.permissions = ((.permissions // {}) | .additionalDirectories = ((.additionalDirectories // []) + [$d]))' || return 1
+  say "granted $SUP in $file"
+}
+
+# revoke_supervisor_dir <root>: undo the grant. The additionalDirectories key goes when its
+# list empties, and permissions goes when that left it empty. $SUP itself is never deleted.
+revoke_supervisor_dir() {
+  local root="$1" file="$1/.claude/settings.local.json"
+  if [ -f "$file" ]; then
+    if ! command -v jq > /dev/null 2>&1; then
+      echo "error: jq is not installed; remove \"$SUP\" from permissions.additionalDirectories in $file by hand" >&2
+      return 1
+    fi
+    settings_shape_ok "$file" || { echo "error: $file is not a JSON object with permissions.additionalDirectories as a list; fix it by hand" >&2; return 1; }
+    if jq -e --arg d "$SUP" '(.permissions.additionalDirectories // []) | index($d) != null' "$file" > /dev/null; then
+      # shellcheck disable=SC2016  # $d is a jq variable
+      write_settings "$file" '.permissions.additionalDirectories -= [$d]
+        | if .permissions.additionalDirectories == [] then del(.permissions.additionalDirectories) else . end
+        | if .permissions == {} then del(.permissions) else . end' || return 1
+      say "revoked $SUP in $file"
+    fi
+  fi
+  registry_remove "$root"
+}
+
+if [ "$sync" = 1 ]; then
+  roots=()
+  add_root() { local r; for r in ${roots[@]+"${roots[@]}"}; do [ "$r" = "$1" ] && return 0; done; roots+=("$1"); }
+  if [ -f "$REGISTRY" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do [ -z "$line" ] || add_root "$line"; done < "$REGISTRY"
+  fi
+  want="$(cd -P "$REPO/skills/$SUPERVISOR_SKILL" && pwd -P)" || die "no skill $SUPERVISOR_SKILL in $REPO/skills"
+  for dir in ${scan_dirs[@]+"${scan_dirs[@]}"}; do
+    while IFS= read -r link; do
+      [ "$(cd -P "$link" 2>/dev/null && pwd -P)" = "$want" ] || continue
+      if root="$(git -C "${link%/.claude/skills/"$SUPERVISOR_SKILL"}" rev-parse --show-toplevel 2>/dev/null)"; then
+        echo "found $link"; add_root "$root"
+      else
+        echo "warning: $link is not inside a git repository; skipped" >&2
+      fi
+    done < <(find "$dir" -maxdepth 6 \( -name node_modules -o -name .git \) -prune \
+               -o -type l -path "*/.claude/skills/$SUPERVISOR_SKILL" -print 2>/dev/null)
+  done
+  [ "${#roots[@]}" -gt 0 ] || { echo "no repos registered in $REGISTRY; pass --scan DIR to find them"; exit 0; }
+  failed=0
+  for root in "${roots[@]}"; do
+    if [ ! -d "$root" ]; then echo "warning: $root no longer exists; skipped (still listed in $REGISTRY)" >&2; continue; fi
+    grant_supervisor_dir "$root" || failed=1
+  done
+  exit "$failed"
+fi
 
 project_root=""
 case "$where" in
@@ -49,10 +206,6 @@ case "$where" in
     target="$project_root/.claude/skills" ;;
   target) ;;
 esac
-
-# In --dry-run nothing changes on disk and every action line is prefixed "[dry-run]".
-run() { [ "$dry" = 1 ] || "$@"; }
-say() { if [ "$dry" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
 
 # Names listed under `requires:` in a skill's frontmatter, space- or comma-separated.
 requires_of() {
@@ -80,10 +233,11 @@ if [ "$uninstall" = 0 ]; then
   skills=("${expanded[@]}")
 fi
 
-failed=0
+failed=0; supervisor_present=0
 for name in "${skills[@]}"; do
   src="$REPO/skills/$name"
   link="$target/$name"
+  present() { [ "$name" != "$SUPERVISOR_SKILL" ] || supervisor_present=1; }
   if [ "$uninstall" = 1 ]; then
     if [ -L "$link" ] && [ "$(readlink "$link")" = "$src" ]; then
       run rm "$link"; say "removed $link"
@@ -94,13 +248,14 @@ for name in "${skills[@]}"; do
     else
       echo "not installed: $link"
     fi
+    [ -z "$project_root" ] || [ "$name" != "$SUPERVISOR_SKILL" ] || revoke_supervisor_dir "$project_root" || failed=1
     continue
   fi
   if [ ! -f "$src/SKILL.md" ]; then echo "error: no skill '$name' in $REPO/skills" >&2; failed=1; continue; fi
   # A dependency nobody named is satisfied by whatever is already there.
   if is_dep_only "$name" && { [ -L "$link" ] || [ -e "$link" ]; }; then
     if [ -L "$link" ]; then echo "dependency present: $link -> $(readlink "$link")"; else echo "dependency present: $link"; fi
-    continue
+    present; continue
   fi
 
   if [ -n "$project_root" ] && ! git -C "$project_root" check-ignore -q "$link"; then
@@ -114,9 +269,9 @@ for name in "${skills[@]}"; do
 
   if [ -L "$link" ]; then
     cur="$(readlink "$link")"
-    if [ "$cur" = "$src" ]; then echo "already linked: $link -> $src"; continue; fi
+    if [ "$cur" = "$src" ]; then echo "already linked: $link -> $src"; present; continue; fi
     if [ "$force" = 1 ]; then
-      run rm "$link"; run ln -s "$src" "$link"; say "relinked $link -> $src (was $cur)"
+      run rm "$link"; run ln -s "$src" "$link"; say "relinked $link -> $src (was $cur)"; present
     else
       echo "error: $link already links to $cur; pass --force to replace it" >&2; failed=1
     fi
@@ -124,7 +279,15 @@ for name in "${skills[@]}"; do
     echo "error: $link exists and is not a symlink; remove it by hand (--force only replaces symlinks)" >&2; failed=1
   else
     [ -d "$target" ] || run mkdir -p "$target"
-    run ln -s "$src" "$link"; say "linked $link -> $src"
+    run ln -s "$src" "$link"; say "linked $link -> $src"; present
   fi
 done
+
+if [ "$supervisor_present" = 1 ]; then
+  if [ -n "$project_root" ]; then
+    grant_supervisor_dir "$project_root" || failed=1
+  else
+    echo "note: $SUPERVISOR_SKILL needs access to $SUP, which is granted per repo: rerun with --project inside each repo, or use --sync-settings"
+  fi
+fi
 exit "$failed"

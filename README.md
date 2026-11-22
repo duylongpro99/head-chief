@@ -149,6 +149,33 @@ There are three ways to install a skill into a project. Pick one per project and
   `npx skills` copies are recorded in each project's `skills-lock.json`: run `grep -l head-chief **/skills-lock.json` (zsh, or bash with `shopt -s globstar`) from a parent folder.
 - **Relink a link that points into another clone.** From the consumer repo root, run `~/personal/head-chief/install.sh --project --force --skill <name>`. `--force` replaces only symlinks, never a real folder.
 
+### Access to the shared supervisor folder
+
+Installing `roadmap-supervisor` with `--project` also lets that repo's Claude sessions use the shared folder `~/supervisor` (override with `SUPERVISOR_HOME=/abs/path`). It:
+
+- creates the folder;
+- adds it to `<repo>/.claude/settings.local.json` under `permissions.additionalDirectories`, keeping other keys and the file's mode, and saving the previous file as `settings.local.json.bak` when it changes;
+- records the repo in `~/supervisor/.installs`.
+
+This needs `jq`. Without it, `install.sh` exits 1 and prints the JSON to merge by hand. It refuses a repo where git does not ignore `.claude/settings.local.json` unless you pass `--force`. Only per-repo settings are written, never `~/.claude/settings.json`; a global or `--agents` install only prints a reminder. A Bash sandbox needs no extra entry, because it can write to every directory in `additionalDirectories`.
+
+```bash
+# from the consumer repo root
+~/personal/head-chief/install.sh --project --skill roadmap-supervisor
+# remove the grant and the registry line (the folder itself is never deleted)
+~/personal/head-chief/install.sh --uninstall --project --skill roadmap-supervisor
+# grant every registered repo again; a second run changes nothing
+~/personal/head-chief/install.sh --sync-settings [--scan DIR ...] [--force] [--dry-run]
+```
+
+`--scan DIR` first registers every repo under `DIR` (up to 6 levels deep) whose `.claude/skills/roadmap-supervisor` links into this checkout. Repos that had the skill before this feature need one run:
+
+```bash
+~/personal/head-chief/install.sh --sync-settings --scan ~/personal
+```
+
+If a running session still cannot write the folder, run `/add-dir ~/supervisor` in it or restart it.
+
 ## Repository layout
 
 Each skill lives under `skills/<name>/` with its own `SKILL.md`, so the `skills` CLI discovers each of them.
@@ -195,6 +222,7 @@ python3 scripts/quick_validate.py        # structural validation (ownership, res
 
 ```bash
 bash skills/roadmap-supervisor/scripts/tests/test-pending-watch.sh   # ledger watcher, stubbed herdr and terminal-notifier
+bash tests/test-install.sh                                           # install.sh links and ~/supervisor grants, in a temp HOME
 ```
 
 To try a skill from this checkout without publishing, link it into a host's skill folder:
