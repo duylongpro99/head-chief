@@ -69,7 +69,7 @@ This repo ships five skills that work together. Install only what you need.
 | **`envoy-peer`** | Hand one task with acceptance criteria to a different agent CLI (codex, grok, omp, agy, …) in its own Herdr pane, have an independent reviewer pane check it, and loop fix → re-review until accepted. Only the status, a short summary and file paths come back. |
 | **`roadmap-supervisor`** | Drive a roadmap of milestones, or one plan of phases, to completion through single-purpose worker sessions (plan, cook, review, debug), each with a brief file. Relays your decisions through a ledger in `~/supervisor` and closes every session it opened. Needs `managed-session`. |
 
-The repo also holds two standalone skills outside the orchestration group: `ak-proposal-review` (review a proposal as a local HTML draft with per-section feedback) and `ui-paper-pencil-design` (the paper-and-pencil page style used in the intro video).
+The repo also holds three standalone skills outside the orchestration group: `ak-proposal-review` (review a proposal as a local HTML draft with per-section feedback), `ui-paper-pencil-design` (the paper-and-pencil page style used in the intro video) and `mac-app-leftovers` (find the files that uninstalled macOS apps left behind, with sizes per app, and move them to the Trash; it also runs without an agent through `uv run`, see [its README](skills/mac-app-leftovers/README.md)).
 
 ## Usage
 
@@ -207,6 +207,7 @@ skills/
     scripts/               # pending-watch.sh (no-model ledger watcher and writer) and its tests
   ak-proposal-review/      # Standalone: local HTML proposal review
   ui-paper-pencil-design/  # Standalone: paper-and-pencil page style
+  mac-app-leftovers/       # Standalone: find and clean leftovers of uninstalled macOS apps (also a uv script)
 assets/                    # README intro video (MP4 + GIF preview)
 video/                     # Remotion source of the intro video
 install.sh                 # Symlink skills from this checkout into a host's skill folder
