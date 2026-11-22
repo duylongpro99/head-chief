@@ -9,7 +9,8 @@
 #                  a dependency already present in any form is left as is, even with --force
 #   --target DIR   link into DIR (default: ~/.claude/skills)
 #   --agents       link into ~/.agents/skills
-#   --project      link into <git root of $PWD>/.claude/skills; refused unless git ignores the link (--force overrides)
+#   --project      link into <git root of $PWD>/.claude/skills (the current folder when it has no git);
+#                  refused unless git ignores the link (--force overrides)
 #   --uninstall    remove links that point into this checkout; anything else is left alone.
 #                  Only the named skills: dependencies are never removed
 #   --force        replace an existing symlink that points elsewhere (never a real file or folder);
@@ -70,6 +71,13 @@ REGISTRY="$SUP/.installs"
 run() { [ "$dry" = 1 ] || "$@"; }
 say() { if [ "$dry" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
 
+# would_commit <root> <path>: true when <root> is a git work tree that does not ignore <path>.
+# A folder with no git has nothing to commit, so a link or settings file there is safe.
+would_commit() {
+  git -C "$1" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 1
+  ! git -C "$1" check-ignore -q "$2"
+}
+
 # The settings fragment a user without jq merges by hand.
 paste_json() {
   local d="${SUP//\\/\\\\}"; d="${d//\"/\\\"}"
@@ -124,7 +132,7 @@ settings_shape_ok() {
 # nothing more: additionalDirectories also grants sandbox writes.
 grant_supervisor_dir() {
   local root="$1" file="$1/.claude/settings.local.json"
-  if ! git -C "$root" check-ignore -q "$file"; then
+  if would_commit "$root" "$file"; then
     if [ "$force" = 1 ]; then
       echo "warning: $file is not ignored by git; granting anyway (--force)" >&2
     else
@@ -181,11 +189,10 @@ if [ "$sync" = 1 ]; then
   for dir in ${scan_dirs[@]+"${scan_dirs[@]}"}; do
     while IFS= read -r link; do
       [ "$(cd -P "$link" 2>/dev/null && pwd -P)" = "$want" ] || continue
-      if root="$(git -C "${link%/.claude/skills/"$SUPERVISOR_SKILL"}" rev-parse --show-toplevel 2>/dev/null)"; then
-        echo "found $link"; add_root "$root"
-      else
-        echo "warning: $link is not inside a git repository; skipped" >&2
-      fi
+      # The git root, or the folder holding .claude when it is not in a git repository.
+      base="${link%/.claude/skills/"$SUPERVISOR_SKILL"}"
+      root="$(git -C "$base" rev-parse --show-toplevel 2>/dev/null)" || root="$(cd -P "$base" && pwd -P)"
+      echo "found $link"; add_root "$root"
     done < <(find "$dir" -maxdepth 6 \( -name node_modules -o -name .git \) -prune \
                -o -type l -path "*/.claude/skills/$SUPERVISOR_SKILL" -print 2>/dev/null)
   done
@@ -203,7 +210,8 @@ case "$where" in
   ""|global) target="$HOME/.claude/skills" ;;
   agents) target="$HOME/.agents/skills" ;;
   project)
-    project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || die "--project needs a git repository (cwd: $PWD)"
+    # The git root, or the current folder when it is not in a git repository.
+    project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || project_root="$(pwd -P)"
     target="$project_root/.claude/skills" ;;
   target) ;;
 esac
@@ -266,7 +274,7 @@ for name in "${skills[@]}"; do
     present; continue
   fi
 
-  if [ -n "$project_root" ] && ! git -C "$project_root" check-ignore -q "$link"; then
+  if [ -n "$project_root" ] && would_commit "$project_root" "$link"; then
     if [ "$force" = 1 ]; then
       echo "warning: $link is not ignored by git; linking anyway (--force)" >&2
     else
