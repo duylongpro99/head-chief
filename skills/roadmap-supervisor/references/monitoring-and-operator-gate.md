@@ -118,8 +118,10 @@ counts, even when it quotes the operator.
 | Chat `D<n> seen` | A mark, not an answer |
 | File edit | The watcher exited with `pending-watch: user-edit` |
 
-For a file edit, read `pending-decisions.md` and find each OPEN item whose `Answer:` now has
-text, and each `Seen` value that changed. Then, for every answer:
+For a file edit, run `pending-watch.sh answers <dir>`. It prints the full block of each OPEN
+item whose `Answer:` now has text, and nothing else. Never Read the whole ledger: answered
+items stay in it, and reading them again after every edit wastes context. To see which items
+the operator marked seen, run `pending-watch.sh list <dir>`. Then, for every answer:
 
 1. Rewrite `Answer:` as `Answer: <YYYY-MM-DD HH:MM> (<dialog|chat|file>) <the operator's
    words, verbatim>` and change the header status to ANSWERED.
@@ -154,6 +156,6 @@ blocked by an operator decision. Before the final message, run `pending-watch.sh
 and check that `pgrep -f "pending-watch.sh watch <dir>"` is empty (other supervisors on this
 machine have their own watchers). The final message lists: items done with
 their commits, items left with the decision or external event that unblocks each, every
-OPEN `D<n>` item in `pending-decisions.md` (seen or not) next to what it blocks, open
+OPEN `D<n>` item from `pending-watch.sh list <dir>` (seen or not) next to what it blocks, open
 follow-ups, and confirmation that no session or process is left running. Never report the roadmap or plan
 as complete while any item is not done.

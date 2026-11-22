@@ -214,5 +214,46 @@ else fail "herdr notification is sent when terminal-notifier is missing" "$(cat 
 stop_watch
 mv "$ROOT/terminal-notifier.off" "$ROOT/bin/terminal-notifier"
 
+# 14. answers prints only the OPEN item that has an answer, whole, even with no blank line before the next item.
+total=$((total + 1)); new_case answers
+{ item 1 ANSWERED ' ' '2026-11-17 12:00 (chat) A'; item 2 OPEN ' ' ''; item 3 OPEN ' ' 'B, ghi số đo' | sed '$d'; item 4 OPEN ' ' ''; } | sup_write
+expected="$(item 3 OPEN ' ' 'B, ghi số đo' | sed '$d')"
+out="$("$SCRIPT" answers "$D")"
+if [ "$out" = "$expected" ]; then ok "answers prints exactly the OPEN answered item"
+else fail "answers prints exactly the OPEN answered item" "out=$out"; fi
+
+# 15. A multi-line answer is printed whole, and two answered items are separated by one blank line.
+total=$((total + 1)); new_case answers-multiline
+first="$(item 1 OPEN ' ' 'line one' | sed '$d'; printf 'line two\n\nline four')"
+{ printf '%s\n\n' "$first"; item 2 OPEN x 'C'; } | sup_write
+expected="$(printf '%s\n\n' "$first"; item 2 OPEN x 'C' | sed '$d')"
+out="$("$SCRIPT" answers "$D")"
+if [ "$out" = "$expected" ]; then ok "answers prints a multi-line answer whole"
+else fail "answers prints a multi-line answer whole" "out=$out"; fi
+
+# 16. An empty ledger prints nothing and exits 0.
+total=$((total + 1)); new_case answers-empty
+out="$("$SCRIPT" answers "$D")"; rc=$?
+if [ "$rc" = 0 ] && [ -z "$out" ] && [ -z "$("$SCRIPT" list "$D")" ]; then ok "answers and list print nothing for an empty ledger"
+else fail "answers and list print nothing for an empty ledger" "rc=$rc out=$out"; fi
+
+# 17. A malformed header makes answers and list exit 2.
+total=$((total + 1)); new_case answers-malformed
+{ item 1 OPEN ' ' 'A'; printf '## D2 - M5 - OPEN\nbroken?\n'; } | sup_write
+"$SCRIPT" answers "$D" > /dev/null 2>&1; rc=$?
+"$SCRIPT" list "$D" > /dev/null 2>&1; rc2=$?
+if [ "$rc" = 2 ] && [ "$rc2" = 2 ]; then ok "answers and list exit 2 on a malformed header"
+else fail "answers and list exit 2 on a malformed header" "rc=$rc list=$rc2"; fi
+
+# 18. list marks unseen, seen and answered items and skips ANSWERED ones.
+total=$((total + 1)); new_case list
+{ item 1 ANSWERED ' ' 'x'; item 2 OPEN ' ' ''; item 3 OPEN x ''; item 4 OPEN ' ' 'A'; } | sup_write
+expected="D2 · M5 · unseen · Câu hỏi: question 2?
+D3 · M5 · seen · Câu hỏi: question 3?
+D4 · M5 · answered · Câu hỏi: question 4?"
+out="$("$SCRIPT" list "$D")"
+if [ "$out" = "$expected" ]; then ok "list marks unseen, seen and answered"
+else fail "list marks unseen, seen and answered" "out=$out"; fi
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

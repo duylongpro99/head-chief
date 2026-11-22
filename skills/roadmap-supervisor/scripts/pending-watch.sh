@@ -4,6 +4,8 @@
 #   pending-watch.sh watch  <dir> [--tab <tab-id>] [--base-label <label>]
 #   pending-watch.sh synced <dir>   # run in the same Bash call as every supervisor write;
 #                                   # lists answers in the file that are not recorded yet
+#   pending-watch.sh answers <dir>  # full block of every OPEN item that has an answer
+#   pending-watch.sh list   <dir>   # one line per OPEN item: D<n> · scope · unseen|seen|answered · question
 #   pending-watch.sh line   <dir>   # one-line footer while items wait; nothing when none do
 #   pending-watch.sh stop   <dir>   # stop a running watcher and restore the tab label
 #
@@ -19,14 +21,15 @@
 #   carry a click action).
 #   When started under a Claude Code process, it exits with "pending-watch: owner gone" once
 #   that process is gone, so a crashed or closed session leaves no watcher behind.
-# line: exits 2 on a malformed "## D" header.
+# line, answers, list: exit 2 on a malformed "## D" header. answers prints each block from
+#   its "## D" line to the next "## " line, blocks separated by one blank line.
 #
 # State lives in <dir>/.pending-state/ (hash, pid, owner, tab, base-label, notified/<Dn>).
 # This script never writes pending-decisions.md.
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
 
 notifier_warned=""
 POLL="${PENDING_POLL_SECONDS:-5}"
@@ -48,14 +51,14 @@ ledger_hash() {
   echo "${h:-missing}"
 }
 
-# One record per item: id \t status \t seen(0|1) \t answered(0|1) \t question line.
+# One record per item: id \t status \t seen(0|1) \t answered(0|1) \t question line \t scope.
 # A bad "## D" header becomes: MALFORMED \t <line>.
 parse() {
   [ -f "$LEDGER" ] || return 0
   LC_ALL=C awk -v SEP=" · " '
     { sub(/\r$/, "") }
     function flush() {
-      if (id != "") printf "%s\t%s\t%d\t%d\t%s\n", id, status, seen, answered, question
+      if (id != "") printf "%s\t%s\t%d\t%d\t%s\t%s\n", id, status, seen, answered, question, scope
       id = ""
     }
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
@@ -66,7 +69,7 @@ parse() {
       if (n == 4 && p[1] ~ /^## D[0-9]+$/ && trim(p[2]) != "" && p[2] == trim(p[2]) \
           && p[3] ~ /^(OPEN|ANSWERED)$/ \
           && p[4] ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]$/) {
-        id = substr(p[1], 4); status = p[3]; seen = 0; answered = 0; question = ""; inanswer = 0
+        id = substr(p[1], 4); scope = p[2]; status = p[3]; seen = 0; answered = 0; question = ""; inanswer = 0
       } else {
         printf "MALFORMED\t%s\n", $0
       }
@@ -87,6 +90,38 @@ parse() {
 # or the malformed header lines.
 select_counted() { awk -F'\t' '$1 != "MALFORMED" && $2 == "OPEN" && $3 == 0 && $4 == 0 { print $1 "\t" $5 }'; }
 select_bad() { awk -F'\t' '$1 == "MALFORMED" { print $2 }'; }
+
+# parse output, or exit 2 after naming each malformed header.
+parse_checked() {
+  local records bad
+  records="$(parse)"
+  bad="$(printf '%s\n' "$records" | select_bad)"
+  if [ -n "$bad" ]; then
+    printf '%s\n' "$bad" | while IFS= read -r l; do echo "pending-watch: malformed header '$l'" >&2; done
+    exit 2
+  fi
+  printf '%s\n' "$records"
+}
+
+# blocks <ids...>: print the block of each named item, from its "## D" line up to the next
+# "## " line, trailing blank lines dropped, blocks separated by one blank line.
+blocks() {
+  [ -f "$LEDGER" ] || return 0
+  LC_ALL=C awk -v want=" $* " '
+    { sub(/\r$/, "") }
+    function flush() {
+      while (n > 0 && buf[n] ~ /^[ \t]*$/) n--
+      if (n > 0) { if (out++) print ""; for (i = 1; i <= n; i++) print buf[i] }
+      n = 0; on = 0
+    }
+    /^## / {
+      flush()
+      if (match($0, /^## D[0-9]+ /) && index(want, " " substr($0, 4, RLENGTH - 4) " ")) on = 1
+    }
+    on { buf[++n] = $0 }
+    END { flush() }
+  ' "$LEDGER"
+}
 
 # A recorded pid counts only while it is a pending-watch process: after a crash or a
 # reboot the number may belong to something else, which must never be signalled.
@@ -170,14 +205,26 @@ cmd_synced() {
   done
 }
 
+# Answers the operator gave in the file that the supervisor has not recorded yet.
+cmd_answers() {
+  local records ids
+  records="$(parse_checked)" || exit $?
+  ids="$(printf '%s\n' "$records" | awk -F'\t' '$2 == "OPEN" && $4 == 1 { printf "%s ", $1 }')"
+  [ -z "$ids" ] || blocks $ids
+}
+
+cmd_list() {
+  local records
+  records="$(parse_checked)" || exit $?
+  printf '%s\n' "$records" | awk -F'\t' '$2 == "OPEN" {
+    state = $4 == 1 ? "answered" : ($3 == 1 ? "seen" : "unseen")
+    print $1 " · " $6 " · " state " · " $5
+  }'
+}
+
 cmd_line() {
-  local records bad ids="" n=0 id
-  records="$(parse)"
-  bad="$(printf '%s\n' "$records" | select_bad)"
-  if [ -n "$bad" ]; then
-    printf '%s\n' "$bad" | while IFS= read -r l; do echo "pending-watch: malformed header '$l'" >&2; done
-    exit 2
-  fi
+  local records ids="" n=0 id
+  records="$(parse_checked)" || exit $?
   while IFS=$'\t' read -r id _; do
     [ -n "$id" ] || continue
     n=$((n + 1))
@@ -317,6 +364,8 @@ cmd_watch() {
 case "$cmd" in
   watch) cmd_watch "$@" ;;
   synced) cmd_synced ;;
+  answers) cmd_answers ;;
+  list) cmd_list ;;
   line) cmd_line ;;
   stop) cmd_stop ;;
   *) usage >&2; exit 2 ;;

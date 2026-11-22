@@ -136,9 +136,17 @@ Answer: 2026-11-17 11:52 (file) A, nhưng ghi số đo vào report
 W=<skill-dir>/scripts/pending-watch.sh
 $W watch  <supervisor-dir>   # run_in_background; exits 0 with "user-edit" on an operator edit
 $W synced <supervisor-dir>   # same Bash call as every supervisor write; lists unrecorded file answers
+$W answers <supervisor-dir>  # full block of each OPEN item with an answer; nothing when none
+$W list   <supervisor-dir>   # one line per OPEN item: D<n> · <scope> · unseen|seen|answered · <question>
 $W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 mới) → /abs/pending-decisions.md"
 $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
+
+`answers` and `list` write nothing and exit 2 on a malformed header, like `line`. `answers`
+prints each block from its `## D` line up to the next `## ` line, without trailing blank
+lines, with one blank line between blocks. Use them instead of reading the file: after a
+`user-edit` exit run `answers`, and for the final report or a rebuild after compaction run
+`list`.
 
 State lives in `<supervisor-dir>/.pending-state/` (`hash`, `pid`, `owner`, `tab`,
 `base-label`, `notified/<Dn>`). `owner` is the Claude Code process that started the watcher;
