@@ -19,8 +19,9 @@ The ledger is the record, and the dialog is only a shortcut. The operator edits 
 | Old layout | `<supervisor-dir>/pending-decisions.md` | Used when `ledger.path` is missing. `init` migrates it and keeps it as `pending-decisions.md.migrated`. |
 
 `init <supervisor-dir> --session <name>` creates the live ledger with this header (the project
-is the git root of `<supervisor-dir>`; `--project`, `--tab` and `--pane` override the defaults,
-which come from the git root name and `herdr pane current`):
+is the git root of `<supervisor-dir>`, or outside git the nearest folder above it that holds
+`.claude`; `--project`, `--tab` and `--pane` override the defaults, which come from that
+folder's name and `herdr pane current`):
 
 ```text
 # Pending decisions

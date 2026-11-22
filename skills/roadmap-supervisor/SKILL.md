@@ -78,7 +78,8 @@ contract from the same earlier phase, start them only after that phase is merged
    `<dir>/ledger.path`. Do not create a `pending-decisions.md` in the project. Every operator
    question goes into the ledger first (format in `references/pending-decisions-format.md`).
    If `init` cannot write `~/supervisor`, run `/add-dir ~/supervisor`, or ask the operator to
-   run `~/personal/head-chief/install.sh --sync-settings` and restart this session.
+   run `~/personal/head-chief/install.sh --sync-settings`; a running session picks up the new
+   access without a restart.
    If `<dir>` already holds an old `pending-decisions.md`, `init` migrates it and names any
    answer still waiting; record those (`answers`, then `record`).
 
