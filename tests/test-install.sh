@@ -119,6 +119,14 @@ check "uninstall removes the skill link" [ ! -L "$B/.claude/skills/roadmap-super
 in_repo "$A" --uninstall --project --skill roadmap-supervisor
 check "uninstall drops the keys it emptied" [ "$(jq -c . "$(settings "$A")")" = '{}' ]
 
+# A link into another clone is not this checkout's to remove, so the grant stays too.
+E="$ROOT/repos/elsewhere"; new_repo "$E"
+in_repo "$E" --project --skill roadmap-supervisor
+ln -sfn "$ROOT/other-clone/skills/roadmap-supervisor" "$E/.claude/skills/roadmap-supervisor"
+in_repo "$E" --uninstall --project --skill roadmap-supervisor
+check "uninstall keeps the grant while another clone's link is installed" [ "$(dirs_of "$E")" = "[\"$SUP\"]" ]
+check "uninstall says why it kept the grant" grep -qF "kept the $SUP grant" <<< "$OUT"
+
 # --dry-run changes nothing, for install, sync and uninstall.
 F="$ROOT/repos/zeta"; new_repo "$F"
 before="$(snapshot)"

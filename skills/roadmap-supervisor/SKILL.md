@@ -148,7 +148,7 @@ Record it in `sessions.md`.
   - every remaining item is blocked on an operator decision. Name the decision that restarts each one.
 
   Never call the roadmap or plan done while an item is not done.
-- Close every session you started. Run `pending-watch.sh close <dir>`: it stops the watcher and moves the live ledger back to `<dir>/pending-decisions.final.md`, so `~/supervisor` keeps only running supervisors. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f "pending-watch.sh watch <dir>"`, scoped to your folder) before the final report.
+- Close every session you started. Run `pending-watch.sh close <dir>`: it stops the watcher and moves the live ledger back to `<dir>/pending-decisions.final.md`, so `~/supervisor` keeps only running supervisors. A supervisor resumed later on the same folder runs `init` again, which brings its OPEN items back to `~/supervisor` under their numbers. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` (including `pgrep -f "pending-watch.sh watch <dir>"`, scoped to your folder) before the final report.
 - The final report lists every OPEN item from `pending-watch.sh list <dir>`, seen or not, next to the decision or item it blocks, and names `<dir>/pending-decisions.final.md` and `<dir>/pending-decisions.archive.md`.
 - Run the project's post-merge steps. Find them in the project's CLAUDE.md, AGENTS.md or contributor docs, or ask the operator at Start if none are written. For design-kit, that means syncing the skill mirror to Hermes, never while a live job runs.
 
@@ -180,4 +180,4 @@ Record it in `sessions.md`.
 - `references/role-skill-map.md`: when choosing a session's skill and name.
 - `references/monitoring-and-operator-gate.md`: when setting the loop, verifying a report, asking the operator, handling an answer or deciding to stop.
 - `references/pending-decisions-format.md`: when adding to or reading the ledger, or running `scripts/pending-watch.sh`.
-- `scripts/pending-watch.sh`: the no-model watcher and the only writer of the ledger (`watch`, `add`, `record`, `seen`, `answers`, `list`, `line`, `synced`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.
+- `scripts/pending-watch.sh`: the no-model watcher and the only writer of the ledger (`init`, `close`, `watch`, `add`, `record`, `seen`, `answers`, `list`, `line`, `synced`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.

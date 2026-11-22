@@ -26,15 +26,20 @@ which come from the git root name and `herdr pane current`):
 # Pending decisions
 Project: atoria · /Users/me/personal/agent/atoria
 Supervisor: atoria-sup · Herdr tab w1:t3 · pane w1:p7
+Folder: /Users/me/personal/agent/atoria/plans/261122-1000-x-supervisor
 Started: 2026-11-22 10:05 · Archive: /Users/me/personal/agent/atoria/plans/261122-1000-x-supervisor/pending-decisions.archive.md
 ```
 
 No header line starts with `## `, so the parser skips it. `init` reuses an existing file whose
-`Project:` path is this project (a restart or a rebuild after compaction) and refuses one that
-belongs to another project. It migrates an old in-project `pending-decisions.md`: it stops its
-watcher, appends ANSWERED items to the archive, copies OPEN items unchanged and in order into
-the live ledger, and renames the old file last. A rerun after a crash copies no item twice. An
-operator save during the migration makes it exit 3 with nothing written.
+`Project:` and `Folder:` are this project and this supervisor folder (a rebuild after
+compaction), and refuses one that belongs to another project or folder: give a second
+supervisor in the same repo its own `--session`. It migrates an old in-project
+`pending-decisions.md`, and the final ledger of a supervisor started again after `close`: it
+stops the watcher, appends ANSWERED items to the archive, copies OPEN items unchanged and in
+order into the live ledger, and renames the old file to `<name>.migrated` last. OPEN items keep
+their numbers, and `add` numbers past every ledger, archive and final file, so no `D<n>` is
+reused. A rerun after a crash copies no item twice. An operator save during the migration
+makes it exit 3 with nothing written.
 
 `close <supervisor-dir>` stops the watcher, moves the live ledger to
 `pending-decisions.final.md` (with a time suffix when that name is taken) and points
@@ -121,15 +126,20 @@ Answer: 2026-11-17 12:05 (chat) A
 
 `record` refuses (exit 1) an unknown `D<n>`, an item that is not OPEN, a `file` record with no
 answer in the file, and a `dialog` or `chat` answer that differs from one already written in
-the file. That last case is a conflict: write the `Conflict:` line instead.
+the file. That last case is a conflict: write the `Conflict:` line instead. An item whose
+`Answer:` line was deleted still gets one in the archive.
 
-The archive is written before the live file is replaced. A crash in between leaves the item
-in both files; running the same `record` again removes it from the live file and does not
-copy it into the archive twice.
+The archive is written before the live file is replaced. A crash in between, or an operator
+save that lands after the archive write, leaves the item in both files. Running the same
+`record` again removes it from the live file and does not copy it twice, as long as the
+archive copy holds the same answer. When the operator has changed the answer since, `record`
+refuses (exit 1) and changes nothing: write both answers on a `Conflict:` line.
 
-An editor that still holds the old file in an unsaved buffer can save it over the new one and
-bring a recorded item back. It is still OPEN with its answer, so the watcher wakes you,
-`answers` shows it, and `record` removes it again without a second archive copy.
+An editor that still holds the old file in an unsaved buffer can save it over the new one. That
+brings back recorded items and removes items added since. A brought-back item with a file
+answer shows up in `answers`, and `record ... file` removes it again. A brought-back `dialog`
+or `chat` item has an empty `Answer:`, so the operator is asked again; record the answer from
+the archive with the same channel and text. Re-add any item that disappeared, with `add`.
 
 ## The four states
 
@@ -208,7 +218,9 @@ $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
 
 `add`, `record` and `seen` build the new file from a snapshot and replace the ledger only
-when it has not changed since. If the operator saved in between, they write nothing, exit 3
+when it has not changed since. The check and the replace are two steps, so a save in the same
+instant can still be overwritten; the window is a few milliseconds. If the operator saved in
+between, they write nothing to the ledger, exit 3
 and print `pending-watch: ledger changed; run answers again`: run `answers`, then retry. Each
 one stores the new hash, so the watcher does not wake for it, and prints on stderr any other
 answer still waiting in the file (`D<n> has an answer in the file that is not recorded yet`);

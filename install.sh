@@ -103,7 +103,8 @@ write_settings() {
     jq --arg d "$SUP" "$filter" "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
     cp -p "$file" "$file.bak"
     # mktemp makes the file 0600; keep the mode the settings file already had.
-    chmod "$(stat -f %Lp "$file" 2>/dev/null || stat -c %a "$file")" "$tmp"
+    # GNU stat first: GNU `stat -f` prints file-system data and fails, BSD `stat -c` only fails.
+    chmod "$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")" "$tmp"
   else
     jq --arg d "$SUP" "$filter" <<< '{}' > "$tmp" || { rm -f "$tmp"; return 1; }
     chmod 644 "$tmp"
@@ -239,16 +240,23 @@ for name in "${skills[@]}"; do
   link="$target/$name"
   present() { [ "$name" != "$SUPERVISOR_SKILL" ] || supervisor_present=1; }
   if [ "$uninstall" = 1 ]; then
+    still_installed=0
     if [ -L "$link" ] && [ "$(readlink "$link")" = "$src" ]; then
       run rm "$link"; say "removed $link"
     elif [ -L "$link" ]; then
-      echo "skipped $link (points to $(readlink "$link"), not this checkout)"
+      echo "skipped $link (points to $(readlink "$link"), not this checkout)"; still_installed=1
     elif [ -e "$link" ]; then
-      echo "skipped $link (not a symlink)"
+      echo "skipped $link (not a symlink)"; still_installed=1
     else
       echo "not installed: $link"
     fi
-    [ -z "$project_root" ] || [ "$name" != "$SUPERVISOR_SKILL" ] || revoke_supervisor_dir "$project_root" || failed=1
+    if [ -n "$project_root" ] && [ "$name" = "$SUPERVISOR_SKILL" ]; then
+      if [ "$still_installed" = 1 ]; then
+        echo "kept the $SUP grant: $SUPERVISOR_SKILL is still installed at $link"
+      else
+        revoke_supervisor_dir "$project_root" || failed=1
+      fi
+    fi
     continue
   fi
   if [ ! -f "$src/SKILL.md" ]; then echo "error: no skill '$name' in $REPO/skills" >&2; failed=1; continue; fi

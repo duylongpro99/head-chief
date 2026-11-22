@@ -352,7 +352,8 @@ if [ "$rc" = 0 ] && [ "$out" = "$F" ] && [ "$(cat "$D/ledger.path")" = "$F" ] \
    && [ "$(sed -n 1p "$F")" = "# Pending decisions" ] \
    && [ "$(sed -n 2p "$F")" = "Project: alpha · $RP" ] \
    && [ "$(sed -n 3p "$F")" = "Supervisor: alpha-sup · Herdr tab W:t1 · pane W:p1" ] \
-   && sed -n 4p "$F" | grep -qE "^Started: [0-9-]{10} [0-9:]{5} · Archive: $RD/pending-decisions.archive.md$" \
+   && [ "$(sed -n 4p "$F")" = "Folder: $RD" ] \
+   && sed -n 5p "$F" | grep -qE "^Started: [0-9-]{10} [0-9:]{5} · Archive: $RD/pending-decisions.archive.md$" \
    && [ ! -e "$D/pending-decisions.md" ]; then
   start_watch
   printf 'M1\nCâu hỏi: shared?\n' | "$SCRIPT" add "$D" > /dev/null
@@ -388,7 +389,7 @@ F="$SH/migrate--mig-sup.md"
 expected_open="$(item 2 OPEN ' ' ''; item 3 OPEN x ''; item 4 OPEN ' ' 'B' | sed '$d')"
 A="$D/pending-decisions.archive.md"
 if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | tail -n 1)" = "$F" ] \
-   && [ "$(tail -n +6 "$F")" = "$expected_open" ] && [ "$(sed -n 3p "$F")" = "Supervisor: mig-sup · Herdr tab T9 · pane P9" ] \
+   && [ "$(tail -n +7 "$F")" = "$expected_open" ] && [ "$(sed -n 3p "$F")" = "Supervisor: mig-sup · Herdr tab T9 · pane P9" ] \
    && [ "$(grep -c '^## D' "$A")" = 1 ] && grep -q '^## D1 · M5 · ANSWERED' "$A" \
    && [ -f "$D/pending-decisions.md.migrated" ] && [ ! -e "$D/pending-decisions.md" ] \
    && dead "$oldpid" && printf '%s' "$out" | grep -qF "answered but not recorded yet: D4" \
@@ -401,7 +402,7 @@ total=$((total + 1))
 mv "$D/pending-decisions.md.migrated" "$D/pending-decisions.md"; rm -f "$D/ledger.path"
 out="$("$SCRIPT" init "$D" --session mig-sup 2>&1)"; rc=$?
 if [ "$rc" = 0 ] && [ "$(grep -c '^## D' "$A")" = 1 ] && [ "$(grep -c '^## D' "$F")" = 3 ] \
-   && [ "$(tail -n +6 "$F")" = "$expected_open" ] && [ -f "$D/pending-decisions.md.migrated" ]; then
+   && [ "$(tail -n +7 "$F")" = "$expected_open" ] && [ -f "$D/pending-decisions.md.migrated" ]; then
   ok "a repeated migration duplicates no item"
 else fail "a repeated migration duplicates no item" "rc=$rc out=$out shared=$(cat "$F")"; fi
 
@@ -432,6 +433,61 @@ if [ "$rc" = 0 ] && [ "$out" = "$FINAL" ] && [ ! -e "$F" ] && [ -f "$FINAL" ] \
    && [ "$("$SCRIPT" close "$D")" = "$FINAL" ]; then
   ok "close moves the ledger back and list still reads it"
 else fail "close moves the ledger back and list still reads it" "rc=$rc out=$out sh=$(ls -A "$SH")"; fi
+
+# 31. record of a chat answer keeps it even when the item has lost its Answer: line.
+total=$((total + 1)); new_case no-answer-line
+item 1 OPEN ' ' '' | grep -v '^Answer:' | sup_write
+out="$("$SCRIPT" record "$D" D1 chat 'Option B, with the 2x budget' 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && grep -qE '^Answer: [0-9-]{10} [0-9:]{5} \(chat\) Option B, with the 2x budget$' "$D/pending-decisions.archive.md"; then
+  ok "record writes the answer when the item has no Answer: line"
+else fail "record writes the answer when the item has no Answer: line" "rc=$rc out=$out archive=$(cat "$D/pending-decisions.archive.md" 2>/dev/null)"; fi
+
+# 32. An archive copy holding another answer makes record refuse and change nothing.
+total=$((total + 1)); new_case stale-archive
+item 1 OPEN ' ' '' | sup_write
+"$SCRIPT" record "$D" D1 chat 'A' > /dev/null
+item 1 OPEN ' ' 'B, actually' | sup_write
+before_live="$(shasum -a 256 < "$D/pending-decisions.md")"; before_arch="$(shasum -a 256 < "$D/pending-decisions.archive.md")"
+out="$("$SCRIPT" record "$D" D1 file 2>&1)"; rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -qF "with another answer ('A')" \
+   && [ "$(shasum -a 256 < "$D/pending-decisions.md")" = "$before_live" ] \
+   && [ "$(shasum -a 256 < "$D/pending-decisions.archive.md")" = "$before_arch" ]; then
+  ok "a stale archive copy with another answer is refused"
+else fail "a stale archive copy with another answer is refused" "rc=$rc out=$out"; fi
+
+# 33. A supervisor started again after close gets its OPEN items back and never reuses a number.
+total=$((total + 1)); new_project restart
+"$SCRIPT" init "$D" --session s > /dev/null
+printf 'M1\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null
+printf 'M1\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null
+"$SCRIPT" record "$D" D2 chat 'A' > /dev/null
+"$SCRIPT" close "$D" > /dev/null
+out="$("$SCRIPT" init "$D" --session s 2>&1)"; rc=$?
+next="$(printf 'M1\nCâu hỏi: new?\n' | "$SCRIPT" add "$D")"
+RD="$(cd "$D" && pwd -P)"
+if [ "$rc" = 0 ] && [ "$(cat "$D/ledger.path")" = "$SH/restart--s.md" ] && [ "$next" = D3 ] \
+   && [ -f "$RD/pending-decisions.final.md.migrated" ] && [ ! -e "$RD/pending-decisions.final.md" ] \
+   && [ "$("$SCRIPT" list "$D")" = "$(printf 'D1 · M1 · unseen · Câu hỏi: still open?\nD3 · M1 · unseen · Câu hỏi: new?')" ]; then
+  ok "a restart after close brings OPEN items back and numbers past every file"
+else fail "a restart after close brings OPEN items back and numbers past every file" "rc=$rc out=$out next=$next list=$("$SCRIPT" list "$D")"; fi
+
+# 34. Another supervisor folder in the same project cannot share a ledger by reusing a session name.
+total=$((total + 1)); new_project two-folders
+"$SCRIPT" init "$D" --session s > /dev/null
+D2="$P/plans/sup2"; mkdir -p "$D2"
+out="$("$SCRIPT" init "$D2" --session s 2>&1)"; rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -qF "belongs to the supervisor folder $(cd "$D" && pwd -P)" && [ ! -e "$D2/ledger.path" ]; then
+  ok "a second folder with the same session name is refused"
+else fail "a second folder with the same session name is refused" "rc=$rc out=$out"; fi
+
+# 35. A folder path with a space leaves no temp file behind when a write exits 3.
+total=$((total + 1)); new_case "sp ace"
+item 1 OPEN ' ' '' | sup_write
+out="$(printf 'M1\nCâu hỏi: q?\n' | PENDING_TEST_BEFORE_SWAP='printf "\n" >> "$LEDGER"' "$SCRIPT" add "$D" 2>&1)"; rc=$?
+if [ "$rc" = 3 ] && [ "$out" = "pending-watch: ledger changed; run answers again" ] \
+   && [ -z "$(ls -A "$D" | grep '^\.pending-\(snap\|new\)')" ]; then
+  ok "temp files are removed from a folder whose path has a space"
+else fail "temp files are removed from a folder whose path has a space" "rc=$rc out=$out ls=$(ls -A "$D")"; fi
 
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

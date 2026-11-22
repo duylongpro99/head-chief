@@ -40,11 +40,12 @@
 # Ledger: the path in <dir>/ledger.path when that file exists, else <dir>/pending-decisions.md.
 # init creates $SUPERVISOR_HOME/<project>--<session>.md (SUPERVISOR_HOME defaults to
 #   ~/supervisor) with a header naming the project, the session, its Herdr tab and pane, the
-#   start time and the archive, and writes ledger.path. It reuses that file when its Project:
-#   path is this project, and refuses one that belongs to another project. When
-#   <dir>/pending-decisions.md exists, init stops its watcher and migrates it: OPEN items go
-#   to the shared file, ANSWERED items to the archive, and the old file becomes
-#   pending-decisions.md.migrated. Answers still waiting are named, for answers and record.
+#   folder, the start time and the archive, and writes ledger.path. It reuses that file when
+#   it belongs to this project and this folder, and refuses one that belongs to another. When
+#   <dir>/pending-decisions.md exists, or ledger.path names a final ledger left by close, init
+#   stops the watcher and migrates that file: OPEN items go to the shared file, ANSWERED items
+#   to the archive, and the old file gets a .migrated suffix. Answers still waiting are named,
+#   for answers and record.
 # close moves the ledger to <dir>/pending-decisions.final.md and points ledger.path at it.
 # The archive and the state always stay in <dir>.
 #
@@ -55,7 +56,9 @@ die() { echo "pending-watch: $*" >&2; exit 1; }
 usage() { sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; }
 
 notifier_warned=""
-TEMPS=""
+TEMPS=()
+# The watcher installs its own EXIT trap; it creates no temp files.
+cleanup_temps() { [ "${#TEMPS[@]}" -eq 0 ] || rm -f "${TEMPS[@]}"; }
 POLL="${PENDING_POLL_SECONDS:-5}"
 RENOTIFY="${PENDING_RENOTIFY_SECONDS:-1800}"
 
@@ -224,14 +227,16 @@ notify() {
 new_temp() {
   local f
   f="$(mktemp "$(dirname "$LEDGER")/.pending-new.XXXXXX")"
-  TEMPS="$TEMPS $f"
+  TEMPS+=("$f")
+  trap cleanup_temps EXIT
   printf '%s' "$f"
 }
 
-# Highest D<n> number in the ledger and the archive, 0 when there is none.
+# Highest D<n> number in the ledger, the archive, final ledgers left by close and an old
+# in-project ledger, 0 when there is none. A restarted supervisor never reuses a number.
 max_id() {
   local f files=()
-  for f in "$LEDGER" "$ARCHIVE"; do [ ! -f "$f" ] || files+=("$f"); done
+  for f in "$LEDGER" "$ARCHIVE" "$OLD_LEDGER" "$DIR"/pending-decisions.final*.md; do [ ! -f "$f" ] || files+=("$f"); done
   [ "${#files[@]}" -gt 0 ] || { echo 0; return 0; }
   LC_ALL=C awk '/^## D[0-9]+ / { n = substr($2, 2) + 0; if (n > m) m = n } END { print m + 0 }' "${files[@]}"
 }
@@ -245,8 +250,8 @@ record_of() { parse | awk -F'\t' -v id="$1" '$1 == id'; }
 take_snapshot() {
   [ -f "$LEDGER" ] || die "no ledger at $LEDGER"
   SNAP="$(mktemp "$(dirname "$LEDGER")/.pending-snap.XXXXXX")"
-  TEMPS="$TEMPS $SNAP"
-  trap 'rm -f $TEMPS' EXIT
+  TEMPS+=("$SNAP")
+  trap cleanup_temps EXIT
   cp "$LEDGER" "$SNAP"
   SNAP_HASH="$(shasum -a 256 < "$SNAP" | awk '{print $1}')"
 }
@@ -303,7 +308,7 @@ cmd_add() {
   parse_checked > /dev/null || exit $?
   take_snapshot
   id="D$(( $(max_id) + 1 ))"
-  new_temp > /dev/null; new="${TEMPS##* }"
+  new_temp > /dev/null; new="${TEMPS[${#TEMPS[@]}-1]}"
   {
     # Drop trailing blank lines, then end with exactly one blank line before the new item.
     LC_ALL=C awk '{ sub(/\r$/, ""); l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[ \t]*$/) n--; for (i = 1; i <= n; i++) print l[i]; if (n) print "" }' "$SNAP"
@@ -320,7 +325,7 @@ cmd_add() {
 # new file next to the ledger, whose path it leaves in REWRITTEN. The program sees "in_item" true on
 # the lines of that item's block.
 rewrite_item() {
-  new_temp > /dev/null; REWRITTEN="${TEMPS##* }"
+  new_temp > /dev/null; REWRITTEN="${TEMPS[${#TEMPS[@]}-1]}"
   LC_ALL=C awk -v id="$1" '
     { sub(/\r$/, "") }
     /^## / { in_item = ($0 ~ ("^## " id " · ")) }
@@ -367,18 +372,29 @@ cmd_record() {
   # The answer goes through the environment: awk -v would expand backslashes in it.
   item="$(printf '%s\n' "$block" | STAMP="$(now_stamp)" CH="$channel" ANS="$text" LC_ALL=C awk '
     NR == 1 { sub(/ · OPEN · /, " · ANSWERED · ") }
-    /^Answer:/ {
+    function answer(   n, a, i) {
       n = split(ENVIRON["ANS"], a, "\n")
       printf "Answer: %s (%s) %s\n", ENVIRON["STAMP"], ENVIRON["CH"], a[1]
       for (i = 2; i <= n; i++) print a[i]
-      exit
+      done = 1
     }
-    { print }')"
+    /^Answer:/ { answer(); exit }
+    { print }
+    END { if (!done) answer() }')"
   # Archive first: a crash before the swap leaves the item in both files, and a rerun skips
   # the archive copy it already holds.
   rewrite_item "$id" 'in_item { next } { print }'
+  if has_item "$ARCHIVE" "$id"; then
+    # An interrupted record left an archive copy. Finish only when it holds this same answer.
+    local archived
+    archived="$(LEDGER="$ARCHIVE" blocks "$id" | LC_ALL=C awk '
+      on { print; next }
+      /^Answer:/ { on = 1; sub(/^Answer: [0-9-]+ [0-9:]+ \([a-z]+\) ?/, ""); print }' | trim_trailing_blank)"
+    [ "$archived" = "$(printf '%s\n' "$text" | trim_trailing_blank)" ] \
+      || die "$id is already in $ARCHIVE with another answer ('$(printf '%s' "$archived" | head -n 1)'); record neither, write both on a Conflict: line and ask the operator"
+  fi
   ensure_unchanged
-  if ! grep -q "^## $id · " "$ARCHIVE" 2>/dev/null; then
+  if ! has_item "$ARCHIVE" "$id"; then
     [ -f "$ARCHIVE" ] || printf '# Answered decisions\n' > "$ARCHIVE"
     printf '\n%s\n' "$item" >> "$ARCHIVE"
   fi
@@ -421,19 +437,28 @@ cmd_init() {
   if [ -f "$file" ]; then
     cur="$(sed -n 's/^Project: .* · //p' "$file" | head -n 1)"
     [ "$cur" = "$root" ] || die "$file belongs to ${cur:-an unknown project}, not $root; pass another --session or --project"
+    cur="$(sed -n 's/^Folder: //p' "$file" | head -n 1)"
+    [ -z "$cur" ] || [ "$cur" = "$DIR" ] || die "$file belongs to the supervisor folder $cur, not $DIR; pass another --session"
   fi
 
-  local header
+  local header src=""
   header="# Pending decisions
 Project: $project · $root
 Supervisor: $session · Herdr tab ${tab:-unknown} · pane ${pane:-unknown}
+Folder: $DIR
 Started: $(now_stamp) · Archive: $ARCHIVE"
 
-  if [ -f "$OLD_LEDGER" ]; then
-    # Migrate the in-project ledger. Build the shared file and the archive first and rename
-    # the old file last, so a failure leaves it in place and a rerun duplicates nothing.
+  # The ledger to migrate: an old in-project one, or the final ledger of a closed supervisor
+  # that is starting again, so its OPEN items are asked again under the same numbers.
+  if [ -f "$OLD_LEDGER" ]; then src="$OLD_LEDGER"
+  elif [ "${LEDGER#"$DIR"/pending-decisions.final}" != "$LEDGER" ] && [ -f "$LEDGER" ]; then src="$LEDGER"
+  fi
+
+  if [ -n "$src" ]; then
+    # Build the shared file and the archive first and rename the old file last, so a failure
+    # leaves it in place and a rerun duplicates nothing.
     if pid_alive; then cmd_stop >&2; fi
-    LEDGER="$OLD_LEDGER"
+    LEDGER="$src"
     parse_checked > /dev/null || exit $?
     take_snapshot
     local records open_ids="" done_ids="" waiting="" id st ans shared_new archive_new
@@ -447,13 +472,13 @@ Started: $(now_stamp) · Archive: $ARCHIVE"
         has_item "$ARCHIVE" "$id" || done_ids="$done_ids $id"
       fi
     done <<< "$records"
-    shared_new="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS="$TEMPS $shared_new"
+    shared_new="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS+=("$shared_new")
     {
       if [ -f "$file" ]; then trim_trailing_blank < "$file"; else printf '%s\n' "$header"; fi
       [ -z "$open_ids" ] || { echo; LEDGER="$SNAP" blocks "$open_ids"; }
     } > "$shared_new"
     if [ -n "$done_ids" ]; then
-      archive_new="$(mktemp "$DIR/.pending-new.XXXXXX")"; TEMPS="$TEMPS $archive_new"
+      archive_new="$(mktemp "$DIR/.pending-new.XXXXXX")"; TEMPS+=("$archive_new")
       {
         if [ -f "$ARCHIVE" ]; then trim_trailing_blank < "$ARCHIVE"; else echo "# Answered decisions"; fi
         echo
@@ -463,13 +488,13 @@ Started: $(now_stamp) · Archive: $ARCHIVE"
     ensure_unchanged
     [ -z "$done_ids" ] || mv "$archive_new" "$ARCHIVE"
     mv "$shared_new" "$file"
-    mv "$OLD_LEDGER" "$OLD_LEDGER.migrated"
-    echo "pending-watch: migrated $OLD_LEDGER: $(printf '%s' "$open_ids" | wc -w | tr -d ' ') OPEN item(s) to $file, $(printf '%s' "$done_ids" | wc -w | tr -d ' ') ANSWERED item(s) to $ARCHIVE; old file kept as $OLD_LEDGER.migrated" >&2
+    mv "$src" "$src.migrated"
+    echo "pending-watch: migrated $src: $(printf '%s' "$open_ids" | wc -w | tr -d ' ') OPEN item(s) to $file, $(printf '%s' "$done_ids" | wc -w | tr -d ' ') ANSWERED item(s) to $ARCHIVE; old file kept as $src.migrated" >&2
     [ -z "$waiting" ] || echo "pending-watch: answered but not recorded yet: $waiting (run answers, then record)" >&2
   elif [ ! -f "$file" ]; then
     local fresh
-    fresh="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS="$TEMPS $fresh"
-    trap 'rm -f $TEMPS' EXIT
+    fresh="$(mktemp "$SUPERVISOR_HOME/.pending-new.XXXXXX")"; TEMPS+=("$fresh")
+    trap cleanup_temps EXIT
     printf '%s\n' "$header" > "$fresh"
     mv "$fresh" "$file"
   fi
@@ -607,7 +632,7 @@ cmd_watch() {
 
   echo "pending-watch: watching $LEDGER (tab $tab, base label '$base', pid $$, owner ${owner:-none})"
   if [ "$(uname -s)" = Darwin ] && ! command -v terminal-notifier >/dev/null 2>&1; then
-    echo "pending-watch: terminal-notifier not found, so notifications cannot open the folder on click (brew install terminal-notifier)"
+    echo "pending-watch: terminal-notifier not found, so notifications cannot open the ledger on click (brew install terminal-notifier)"
   fi
   local label="" candidate="" warned="" h now id q last n new_label records bad
   while :; do
