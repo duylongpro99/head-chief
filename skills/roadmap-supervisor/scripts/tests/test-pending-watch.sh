@@ -255,5 +255,83 @@ out="$("$SCRIPT" list "$D")"
 if [ "$out" = "$expected" ]; then ok "list marks unseen, seen and answered"
 else fail "list marks unseen, seen and answered" "out=$out"; fi
 
+# 19. record moves the item to the archive, stamps it ANSWERED, and a running watcher does not wake.
+total=$((total + 1)); new_case record
+{ item 1 OPEN ' ' ''; item 2 OPEN ' ' 'B'; item 3 OPEN ' ' ''; } | sup_write
+start_watch
+wait_for 10 logged "tab rename W:t1 sup ⏳2"
+out="$("$SCRIPT" record "$D" D2 file 2>&1)"; rc=$?
+A="$D/pending-decisions.archive.md"
+if [ "$rc" = 0 ] && [ "$out" = D2 ] && ! grep -q '^## D2 ' "$D/pending-decisions.md" \
+   && grep -q '^## D1 ' "$D/pending-decisions.md" && grep -q '^## D3 ' "$D/pending-decisions.md" \
+   && [ "$(head -n 1 "$A")" = "# Answered decisions" ] \
+   && grep -qE '^## D2 · M5 · ANSWERED · 2026-11-17 11:40$' "$A" \
+   && grep -qE '^Answer: [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \(file\) B$' "$A" \
+   && grep -qF -- '- A (đề xuất): flash' "$A" && grep -qF 'Chặn: M5-cook' "$A" \
+   && sleep 3 && kill -0 "$WPID" 2>/dev/null; then
+  ok "record archives the item, removes it from the ledger, and does not wake the watcher"
+else fail "record archives the item, removes it from the ledger, and does not wake the watcher" "rc=$rc out=$out watch=$(cat "$D/watch.out") archive=$(cat "$A" 2>/dev/null)"; fi
+stop_watch
+
+# 20. Recording again after a crash between the archive write and the swap archives the item once.
+total=$((total + 1)); new_case record-twice
+item 1 OPEN ' ' '' | sup_write
+"$SCRIPT" record "$D" D1 chat 'A' > /dev/null
+item 1 OPEN ' ' '' | sup_write
+out="$("$SCRIPT" record "$D" D1 chat 'A' 2>&1)"; rc=$?
+second="$("$SCRIPT" record "$D" D1 chat 'A' 2>&1)"; rc2=$?
+if [ "$rc" = 0 ] && [ "$(grep -c '^## D1 ' "$D/pending-decisions.archive.md")" = 1 ] \
+   && ! grep -q '^## D1 ' "$D/pending-decisions.md" \
+   && [ "$rc2" = 1 ] && printf '%s' "$second" | grep -qF "already recorded"; then
+  ok "record twice archives the item once"
+else fail "record twice archives the item once" "rc=$rc out=$out rc2=$rc2 second=$second"; fi
+
+# 21. A ledger change between the read and the swap writes nothing and exits 3.
+total=$((total + 1)); new_case record-race
+item 1 OPEN ' ' 'A' | sup_write
+before="$(shasum -a 256 < "$D/pending-decisions.md")"
+out="$(PENDING_TEST_BEFORE_SWAP='printf "\n" >> "$LEDGER"' "$SCRIPT" record "$D" D1 file 2>&1)"; rc=$?
+after_live="$(sed '$d' "$D/pending-decisions.md" | shasum -a 256)"
+if [ "$rc" = 3 ] && [ "$out" = "pending-watch: ledger changed; run answers again" ] \
+   && [ "$after_live" = "$before" ] && [ ! -e "$D/pending-decisions.archive.md" ] \
+   && [ -z "$(ls -A "$D" | grep '^\.pending-\(snap\|new\)')" ]; then
+  ok "a concurrent edit makes record exit 3 and write nothing"
+else fail "a concurrent edit makes record exit 3 and write nothing" "rc=$rc out=$out files=$(ls -A "$D")"; fi
+
+# 22. add numbers past items already archived.
+total=$((total + 1)); new_case add
+{ item 1 OPEN ' ' ''; item 2 OPEN ' ' ''; item 3 OPEN ' ' ''; } | sup_write
+"$SCRIPT" record "$D" D3 dialog 'A (Recommended)' > /dev/null
+id="$(printf 'M6\nCâu hỏi: giữ ngưỡng?\n- A (đề xuất): giữ\nChặn: p02-cook\n' | "$SCRIPT" add "$D" 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && [ "$id" = D4 ] && "$SCRIPT" line "$D" > /dev/null \
+   && grep -qE '^## D4 · M6 · OPEN · [0-9-]{10} [0-9:]{5}$' "$D/pending-decisions.md" \
+   && [ "$("$SCRIPT" list "$D" | tail -n 1)" = "D4 · M6 · unseen · Câu hỏi: giữ ngưỡng?" ] \
+   && [ "$(tail -n 2 "$D/pending-decisions.md" | tr '\n' '|')" = "Seen: [ ]|Answer:|" ]; then
+  ok "add after an archived D3 returns D4"
+else fail "add after an archived D3 returns D4" "rc=$rc id=$id ledger=$(cat "$D/pending-decisions.md")"; fi
+
+# 23. A multi-line answer written in the file survives record, backslashes included.
+total=$((total + 1)); new_case record-multiline
+{ item 1 OPEN ' ' 'B, nhưng' | sed '$d'; printf '  ghi số đo C:\\new\n\nvào report\n\n'; item 2 OPEN ' ' ''; } | sup_write
+"$SCRIPT" record "$D" D1 file > /dev/null
+got="$(sed -n '/^Answer:/,$p' "$D/pending-decisions.archive.md")"
+if printf '%s\n' "$got" | head -n 1 | grep -qE '^Answer: [0-9-]{10} [0-9:]{5} \(file\) B, nhưng$' \
+   && [ "$(printf '%s\n' "$got" | tail -n +2)" = "$(printf '  ghi số đo C:\\new\n\nvào report')" ] \
+   && grep -q '^## D2 ' "$D/pending-decisions.md"; then
+  ok "record keeps a multi-line file answer"
+else fail "record keeps a multi-line file answer" "got=$got"; fi
+
+# 24. seen sets Seen: [x] and drops the item from line; a chat answer that contradicts the file is refused.
+total=$((total + 1)); new_case seen-cmd
+{ item 1 OPEN ' ' ''; item 2 OPEN ' ' ''; item 3 OPEN ' ' 'B'; } | sup_write
+"$SCRIPT" seen "$D" D1 > /dev/null 2>&1; rc=$?
+"$SCRIPT" record "$D" D3 chat 'A' > /dev/null 2>&1; rc2=$?
+if [ "$rc" = 0 ] && [ "$("$SCRIPT" line "$D")" = "⏳ 1 đang chờ bạn (D2 mới) → $(cd "$D" && pwd -P)/pending-decisions.md (watcher off)" ] \
+   && [ "$("$SCRIPT" list "$D" | head -n 1)" = "D1 · M5 · seen · Câu hỏi: question 1?" ] \
+   && [ "$rc2" = 1 ] && grep -q '^## D3 · M5 · OPEN' "$D/pending-decisions.md" \
+   && "$SCRIPT" seen "$D" D9 > /dev/null 2>&1; [ "$?" = 1 ]; then
+  ok "seen marks the item; conflicting and unknown items are refused"
+else fail "seen marks the item; conflicting and unknown items are refused" "rc=$rc rc2=$rc2 line=$("$SCRIPT" line "$D")"; fi
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

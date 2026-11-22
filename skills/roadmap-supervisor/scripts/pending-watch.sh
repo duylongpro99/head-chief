@@ -7,6 +7,9 @@
 #   pending-watch.sh answers <dir>  # full block of every OPEN item that has an answer
 #   pending-watch.sh list   <dir>   # one line per OPEN item: D<n> · scope · unseen|seen|answered · question
 #   pending-watch.sh line   <dir>   # one-line footer while items wait; nothing when none do
+#   pending-watch.sh add    <dir>   # item body on stdin (scope line first); prints the new D<n>
+#   pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]  # stamp the answer, archive the item
+#   pending-watch.sh seen   <dir> D<n>  # set Seen: [x]
 #   pending-watch.sh stop   <dir>   # stop a running watcher and restore the tab label
 #
 # watch: badges the Herdr tab "<base> ⏳N" (N = open, unseen items), notifies each new item
@@ -23,15 +26,23 @@
 #   that process is gone, so a crashed or closed session leaves no watcher behind.
 # line, answers, list: exit 2 on a malformed "## D" header. answers prints each block from
 #   its "## D" line to the next "## " line, blocks separated by one blank line.
+# add, record, seen: the only writers of the ledger. Each one builds the new file from a
+#   snapshot and replaces the ledger only when it is still unchanged; otherwise it writes
+#   nothing and exits 3. Each stores the new hash (like synced), names any other answer still
+#   waiting in the file, and exits 1 for an unknown or non-OPEN D<n>.
+#   add numbers the item after the highest D<n> in the ledger and the archive, so a number is
+#   never reused. record appends the answered item to <dir>/pending-decisions.archive.md (once
+#   per D<n>) and then removes it from the ledger; for "file" the answer is the text already
+#   in the item, for "dialog" and "chat" the text argument is required.
 #
 # State lives in <dir>/.pending-state/ (hash, pid, owner, tab, base-label, notified/<Dn>).
-# This script never writes pending-decisions.md.
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
 
 notifier_warned=""
+TEMPS=""
 POLL="${PENDING_POLL_SECONDS:-5}"
 RENOTIFY="${PENDING_RENOTIFY_SECONDS:-1800}"
 
@@ -42,6 +53,7 @@ case "$cmd" in -h|--help|help) usage; exit 0 ;; esac
 [ -d "$1" ] || die "no such folder: $1"
 DIR="$(cd "$1" && pwd -P)"; shift
 LEDGER="$DIR/pending-decisions.md"
+ARCHIVE="$DIR/pending-decisions.archive.md"
 STATE="$DIR/.pending-state"
 
 # An editor may rename the file away for a moment while saving; read that as "missing".
@@ -192,6 +204,171 @@ notify() {
     [ -n "$notifier_warned" ] || echo "pending-watch: terminal-notifier failed, no clickable notification: $err" >&2
     notifier_warned=1
   fi
+}
+
+# new_temp: a fresh file next to the ledger (so mv onto it is atomic), removed on exit unless moved.
+new_temp() {
+  local f
+  f="$(mktemp "$(dirname "$LEDGER")/.pending-new.XXXXXX")"
+  TEMPS="$TEMPS $f"
+  printf '%s' "$f"
+}
+
+# Highest D<n> number in the ledger and the archive, 0 when there is none.
+max_id() {
+  cat "$LEDGER" "$ARCHIVE" 2>/dev/null \
+    | LC_ALL=C awk '/^## D[0-9]+ / { n = substr($2, 2) + 0; if (n > m) m = n } END { print m + 0 }'
+}
+
+now_stamp() { date '+%Y-%m-%d %H:%M'; }
+
+# Prints the parse record of one item, or nothing.
+record_of() { parse | awk -F'\t' -v id="$1" '$1 == id'; }
+
+# Snapshot the ledger so the new content is built from one consistent read. Sets SNAP and SNAP_HASH.
+take_snapshot() {
+  [ -f "$LEDGER" ] || die "no ledger at $LEDGER"
+  SNAP="$(mktemp "$(dirname "$LEDGER")/.pending-snap.XXXXXX")"
+  TEMPS="$TEMPS $SNAP"
+  trap 'rm -f $TEMPS' EXIT
+  cp "$LEDGER" "$SNAP"
+  SNAP_HASH="$(shasum -a 256 < "$SNAP" | awk '{print $1}')"
+}
+
+# swap_ledger <new-file>: replace the ledger with <new-file> only when the ledger still matches
+# the snapshot. The new file lives in the ledger's folder, so mv is atomic.
+# ensure_unchanged: exit 3, having written nothing, when the ledger no longer matches the snapshot.
+ensure_unchanged() {
+  if [ -n "${PENDING_TEST_BEFORE_SWAP:-}" ]; then eval "$PENDING_TEST_BEFORE_SWAP"; PENDING_TEST_BEFORE_SWAP=""; fi
+  if [ "$(ledger_hash)" != "$SNAP_HASH" ]; then
+    echo "pending-watch: ledger changed; run answers again" >&2
+    exit 3
+  fi
+}
+
+swap_ledger() {
+  local new="$1"
+  ensure_unchanged
+  mkdir -p "$STATE"
+  mv "$new" "$LEDGER"
+  ledger_hash > "$STATE/hash"
+}
+
+# Name answers still waiting in the file, other than <except>; storing the new hash means the
+# watcher will not report them.
+report_waiting() {
+  parse | awk -F'\t' -v skip="${1:-}" '$1 != "MALFORMED" && $2 == "OPEN" && $4 == 1 && $1 != skip { print $1 }' \
+    | while IFS= read -r id; do
+        echo "pending-watch: $id has an answer in the file that is not recorded yet" >&2
+      done
+}
+
+# require_open <D<n>>: exit 1 unless the ledger holds that item as OPEN.
+require_open() {
+  local rec
+  case "$1" in D[0-9]*) ;; *) die "not an item id: $1 (expected D<n>)" ;; esac
+  parse_checked > /dev/null || exit $?
+  rec="$(record_of "$1")"
+  if [ -z "$rec" ]; then
+    if grep -q "^## $1 · " "$ARCHIVE" 2>/dev/null; then die "$1 is already recorded in $ARCHIVE"; fi
+    die "no item $1 in $LEDGER"
+  fi
+  [ "$(printf '%s' "$rec" | cut -f2)" = OPEN ] || die "$1 is not OPEN"
+}
+
+cmd_add() {
+  local body scope rest id new
+  body="$(cat)"
+  scope="$(printf '%s\n' "$body" | head -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  rest="$(printf '%s\n' "$body" | tail -n +2)"
+  [ -n "$scope" ] || die "add: the first stdin line must be the scope"
+  case "$scope" in *" · "*) die "add: the scope must not contain ' · '" ;; esac
+  [ -n "$(printf '%s' "$rest" | tr -d '[:space:]')" ] || die "add: no question after the scope line"
+  parse_checked > /dev/null || exit $?
+  take_snapshot
+  id="D$(( $(max_id) + 1 ))"
+  new_temp > /dev/null; new="${TEMPS##* }"
+  {
+    # Drop trailing blank lines, then end with exactly one blank line before the new item.
+    LC_ALL=C awk '{ sub(/\r$/, ""); l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[ \t]*$/) n--; for (i = 1; i <= n; i++) print l[i]; if (n) print "" }' "$SNAP"
+    printf '## %s · %s · OPEN · %s\n' "$id" "$scope" "$(now_stamp)"
+    printf '%s\n' "$rest" | LC_ALL=C awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[ \t]*$/) n--; s = 1; while (s <= n && l[s] ~ /^[ \t]*$/) s++; for (i = s; i <= n; i++) print l[i] }'
+    printf 'Seen: [ ]\nAnswer:\n'
+  } > "$new"
+  swap_ledger "$new"
+  echo "$id"
+  report_waiting
+}
+
+# rewrite_item <D<n>> <awk program>: run the program over the snapshot with id set, into a
+# new file next to the ledger, whose path it leaves in REWRITTEN. The program sees "in_item" true on
+# the lines of that item's block.
+rewrite_item() {
+  new_temp > /dev/null; REWRITTEN="${TEMPS##* }"
+  LC_ALL=C awk -v id="$1" '
+    { sub(/\r$/, "") }
+    /^## / { in_item = ($0 ~ ("^## " id " · ")) }
+    '"$2" "$SNAP" > "$REWRITTEN"
+}
+
+cmd_seen() {
+  [ "$#" -eq 1 ] || die "usage: seen <dir> D<n>"
+  local id="$1"
+  require_open "$id"
+  take_snapshot
+  rewrite_item "$id" '
+    in_item && /^Seen:/ { print "Seen: [x]"; done = 1; next }
+    in_item && /^Answer:/ && !done { print "Seen: [x]"; done = 1 }
+    { print }'
+  swap_ledger "$REWRITTEN"
+  echo "$id"
+  report_waiting
+}
+
+cmd_record() {
+  [ "$#" -ge 2 ] || die "usage: record <dir> D<n> <dialog|chat|file> [text]"
+  local id="$1" channel="$2" text="${3:-}" block filed item
+  case "$channel" in
+    file) [ "$#" -eq 2 ] || die "record ... file takes no text: the answer is the one in the file" ;;
+    dialog|chat) [ "$#" -eq 3 ] && [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] \
+        || die "record ... $channel needs the operator's answer as the text argument" ;;
+    *) die "unknown channel: $channel (dialog, chat or file)" ;;
+  esac
+  require_open "$id"
+  take_snapshot
+  block="$(LEDGER="$SNAP" blocks "$id")"
+  # The answer already written in the item: text after "Answer:" and every line below it.
+  filed="$(printf '%s\n' "$block" | LC_ALL=C awk '
+    on { print; next }
+    /^Answer:/ { on = 1; r = substr($0, 8); sub(/^[ \t]+/, "", r); if (r != "") print r }' \
+    | LC_ALL=C awk '{ l[NR] = $0 } END { s = 1; while (s <= NR && l[s] ~ /^[ \t]*$/) s++; for (i = s; i <= NR; i++) print l[i] }')"
+  if [ "$channel" = file ]; then
+    [ -n "$filed" ] || die "$id has no answer in the file"
+    text="$filed"
+  elif [ -n "$filed" ] && [ "$filed" != "$text" ]; then
+    die "$id already has a different answer in the file ('$(printf '%s' "$filed" | head -n 1)'); record neither, write both on a Conflict: line and ask the operator"
+  fi
+  # The answer goes through the environment: awk -v would expand backslashes in it.
+  item="$(printf '%s\n' "$block" | STAMP="$(now_stamp)" CH="$channel" ANS="$text" LC_ALL=C awk '
+    NR == 1 { sub(/ · OPEN · /, " · ANSWERED · ") }
+    /^Answer:/ {
+      n = split(ENVIRON["ANS"], a, "\n")
+      printf "Answer: %s (%s) %s\n", ENVIRON["STAMP"], ENVIRON["CH"], a[1]
+      for (i = 2; i <= n; i++) print a[i]
+      exit
+    }
+    { print }')"
+  # Archive first: a crash before the swap leaves the item in both files, and a rerun skips
+  # the archive copy it already holds.
+  rewrite_item "$id" 'in_item { next } { print }'
+  ensure_unchanged
+  if ! grep -q "^## $id · " "$ARCHIVE" 2>/dev/null; then
+    [ -f "$ARCHIVE" ] || printf '# Answered decisions\n' > "$ARCHIVE"
+    printf '\n%s\n' "$item" >> "$ARCHIVE"
+  fi
+  swap_ledger "$REWRITTEN"
+  echo "$id"
+  report_waiting "$id"
 }
 
 # Accepting the current file as the supervisor's own could hide an answer the operator
@@ -366,6 +543,9 @@ case "$cmd" in
   synced) cmd_synced ;;
   answers) cmd_answers ;;
   list) cmd_list ;;
+  add) cmd_add ;;
+  record) cmd_record "$@" ;;
+  seen) cmd_seen "$@" ;;
   line) cmd_line ;;
   stop) cmd_stop ;;
   *) usage >&2; exit 2 ;;

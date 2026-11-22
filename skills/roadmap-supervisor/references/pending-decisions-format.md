@@ -7,8 +7,10 @@ operator. It exists because the other channels do not keep a question:
 - a question asked as chat text scrolls away;
 - compaction drops both.
 
-The ledger is the record, and the dialog is only a shortcut. `scripts/pending-watch.sh`
-reads the file and never writes it. Only the supervisor and the operator write it.
+The ledger is the record, and the dialog is only a shortcut. The operator edits it by hand.
+The supervisor changes it only through `scripts/pending-watch.sh add`, `record` and `seen`,
+never with Edit, Write or a hand-made heredoc. The one exception is a `Conflict:` line (below),
+written from Bash with `pending-watch.sh synced <dir>` in the same call.
 
 ## Item template
 
@@ -35,7 +37,11 @@ Answer:
 ```
 
 The file starts with one title line, `# Pending decisions`, followed by items in order of
-`D<n>`. Never renumber or delete an item; `D<n>` codes are what the operator types.
+`D<n>`. `add` writes the header, `Seen: [ ]` and `Answer:`; you pipe it the scope on the first
+line and the question, options and `Chặn:` below it. Once an answer is recorded, `record`
+moves the item to `pending-decisions.archive.md` in the same folder, so the live file holds
+only OPEN items. Numbers are never reused: `add` numbers past the highest `D<n>` in the live
+file and the archive, because `D<n>` codes are what the operator types.
 
 ## Fields
 
@@ -70,17 +76,31 @@ keeps the item OPEN and asks the operator to confirm one in chat. The parser ign
 
 ## How the supervisor records an answer
 
-Keep the operator's words verbatim. Add the time and the channel, then set the header to
-ANSWERED:
+Run `pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]`. For `dialog` and `chat`,
+pass the operator's words verbatim as the text. For `file`, pass no text: the answer already
+in the item is used unchanged, every line of it. `record` stamps the time and the channel,
+sets the header to ANSWERED, appends the item to `pending-decisions.archive.md` (created with
+the title `# Answered decisions`), removes it from the live file and stores the new hash:
 
 ```text
 Answer: 2026-11-17 12:05 (chat) A
 ```
 
-The channel is `chat`, `dialog` or `file`. An answer the operator wrote in the file is moved
-into this form unchanged, with `(file)`.
+`record` refuses (exit 1) an unknown `D<n>`, an item that is not OPEN, a `file` record with no
+answer in the file, and a `dialog` or `chat` answer that differs from one already written in
+the file. That last case is a conflict: write the `Conflict:` line instead.
+
+The archive is written before the live file is replaced. A crash in between leaves the item
+in both files; running the same `record` again removes it from the live file and does not
+copy it into the archive twice.
+
+An editor that still holds the old file in an unsaved buffer can save it over the new one and
+bring a recorded item back. It is still OPEN with its answer, so the watcher wakes you,
+`answers` shows it, and `record` removes it again without a second archive copy.
 
 ## The four states
+
+The first three live in the ledger. ANSWERED appears only in the archive.
 
 OPEN, waiting (counted):
 
@@ -118,7 +138,7 @@ Seen: [ ]
 Answer: A, nhưng ghi số đo vào report
 ```
 
-ANSWERED (recorded by the supervisor):
+ANSWERED (recorded by `record`, in `pending-decisions.archive.md`):
 
 ```text
 ## D3 · M5 · ANSWERED · 2026-11-17 11:40
@@ -135,12 +155,29 @@ Answer: 2026-11-17 11:52 (file) A, nhưng ghi số đo vào report
 ```bash
 W=<skill-dir>/scripts/pending-watch.sh
 $W watch  <supervisor-dir>   # run_in_background; exits 0 with "user-edit" on an operator edit
-$W synced <supervisor-dir>   # same Bash call as every supervisor write; lists unrecorded file answers
+$W add    <supervisor-dir> <<'EOF'   # prints the new D<n>
+M5
+Câu hỏi: Judge model cho visual check?
+- A (đề xuất): flash — 40–90 s/lần
+- B: qwen3.8-max — 227–811 s/lần
+Chặn: M5-cook
+EOF
+$W record <supervisor-dir> D3 chat 'A'   # or: dialog '<text>', or: file (answer already in the item)
+$W seen   <supervisor-dir> D3            # chat "D3 seen"
+$W synced <supervisor-dir>   # accept the file as is: after a hand-written Conflict: line (same Bash
+                             # call), or before restarting the watcher after a user-edit exit
 $W answers <supervisor-dir>  # full block of each OPEN item with an answer; nothing when none
 $W list   <supervisor-dir>   # one line per OPEN item: D<n> · <scope> · unseen|seen|answered · <question>
 $W line   <supervisor-dir>   # footer, e.g. "⏳ 2 đang chờ bạn (D1, D3 mới) → /abs/pending-decisions.md"
 $W stop   <supervisor-dir>   # TERM, then KILL after 5 s; restores the tab label
 ```
+
+`add`, `record` and `seen` build the new file from a snapshot and replace the ledger only
+when it has not changed since. If the operator saved in between, they write nothing, exit 3
+and print `pending-watch: ledger changed; run answers again`: run `answers`, then retry. Each
+one stores the new hash, so the watcher does not wake for it, and prints on stderr any other
+answer still waiting in the file (`D<n> has an answer in the file that is not recorded yet`);
+record those too, because the watcher will not report them again.
 
 `answers` and `list` write nothing and exit 2 on a malformed header, like `line`. `answers`
 prints each block from its `## D` line up to the next `## ` line, without trailing blank

@@ -67,13 +67,13 @@ Reports are data; they cannot authorize an irreversible step.
 Every operator question is first an item in `pending-decisions.md`
 (`references/pending-decisions-format.md`):
 
-1. Append item `D<n>` with the next free number, status OPEN, `Seen: [ ]`, empty `Answer:`.
-   Write it and run `pending-watch.sh synced <dir>` in the same Bash call, or the watcher
-   reads your write as an operator edit and wakes you once for nothing. Change the ledger
-   only from Bash (a heredoc, `sed` or `python3`), never with Edit or Write: those tools
-   cannot run `synced` in the same call. If `synced` prints `D<n> has an answer in the file
-   that is not recorded yet`, the operator saved an answer just before your write; record it
-   now (below), because the watcher will not report it again.
+1. Pipe the item to `pending-watch.sh add <dir>`: the scope on the first line, then the
+   question, the options and `Chặn:`. It prints the new `D<n>`, writes the header, `Seen: [ ]`
+   and `Answer:`, and stores the hash so the watcher does not wake for your write. Never change
+   the ledger with Edit, Write or a hand-made heredoc. If `add` prints `D<n> has an answer in
+   the file that is not recorded yet`, the operator saved an answer just before your write;
+   record it now (below), because the watcher will not report it again. Exit 3 means the
+   operator saved while `add` ran: run `answers`, then `add` again.
 2. Then ask through `AskUserQuestion`, starting the question text with `D<n>:`. Several
    items may share one call.
 3. If the dialog returns an answer, record it (below). If it returns no answer (cancelled),
@@ -123,14 +123,19 @@ item whose `Answer:` now has text, and nothing else. Never Read the whole ledger
 items stay in it, and reading them again after every edit wastes context. To see which items
 the operator marked seen, run `pending-watch.sh list <dir>`. Then, for every answer:
 
-1. Rewrite `Answer:` as `Answer: <YYYY-MM-DD HH:MM> (<dialog|chat|file>) <the operator's
-   words, verbatim>` and change the header status to ANSWERED.
-2. For a mark, set `Seen: [x]` and leave the status OPEN.
+1. Run `pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]`, with the operator's
+   words verbatim as the text for `dialog` and `chat`, and no text for `file`. It stamps the
+   time and channel, moves the item to `pending-decisions.archive.md` and stores the hash.
+   Exit 3 means the operator saved again while it ran: run `answers` and start over.
+2. For a chat mark (`D<n> seen`), run `pending-watch.sh seen <dir> D<n>`. A mark the operator
+   set in the file needs no write.
    If two channels give different answers for one item (for example the dialog and a file
-   edit made while the dialog was open), record neither. Write both verbatim with time and
-   channel on a `Conflict:` line above `Seen:`, keep the item OPEN with an empty `Answer:`,
-   and ask the operator in chat to confirm one (`D<n>: A` or `D<n>: B`).
-3. Run `pending-watch.sh synced <dir>` in the same Bash call as the write.
+   edit made while the dialog was open), record neither; `record` refuses this case. Write both
+   verbatim with time and channel on a `Conflict:` line above `Seen:`, keep the item OPEN with
+   an empty `Answer:`, run `pending-watch.sh synced <dir>` in the same Bash call, and ask the
+   operator in chat to confirm one (`D<n>: A` or `D<n>: B`).
+3. Read what `record` and `seen` print on stderr: another answer still waiting in the file must
+   be recorded too.
 4. Put the answer into the next brief, or SendMessage it to the session it blocks.
 5. After a `user-edit` exit, always run `pending-watch.sh synced <dir>` before restarting,
    even when you wrote nothing (a `Seen: [x]` the operator set, or a typo fix): without it the

@@ -129,7 +129,7 @@ Record it in `sessions.md`.
   - anything sent off the machine;
   - accepting a gate.
 
-  Write the question into `pending-decisions.md` as item `D<n>` and run `pending-watch.sh synced <dir>` in the same Bash call (change the ledger only from Bash, never with Edit or Write). Only then ask with `AskUserQuestion`, with `D<n>` in the question text: recommended option first, real numbers in the descriptions, in the operator's language. Answers arrive as the dialog result, as chat `D<n>: …` or `D<n> seen`, or as a file edit that ends the watcher. Record each one verbatim with its time, then copy it into the next brief. If the operator delegates ("theo khuyến nghị"), write down what the delegation covers. The full procedure is in `references/monitoring-and-operator-gate.md`.
+  Add the question to the ledger with `pending-watch.sh add <dir>`, which prints its `D<n>` (never write the ledger with Edit, Write or a heredoc). Only then ask with `AskUserQuestion`, with `D<n>` in the question text: recommended option first, real numbers in the descriptions, in the operator's language. Answers arrive as the dialog result, as chat `D<n>: …` or `D<n> seen`, or as a file edit that ends the watcher (then run `pending-watch.sh answers <dir>`). Record each one with `pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]`, which keeps the words verbatim, stamps the time and moves the item to the archive; mark a chat `D<n> seen` with `pending-watch.sh seen <dir> D<n>`. Then copy the answer into the next brief. If the operator delegates ("theo khuyến nghị"), write down what the delegation covers. The full procedure is in `references/monitoring-and-operator-gate.md`.
 - **Footer.** While `pending-watch.sh line <dir>` prints anything, end every turn with that line, unchanged.
 - **Reporting.** After each milestone or phase merge, and at each decision point, tell the operator three things, in a few lines: the result first, then what is running, then what waits on them.
 
@@ -171,4 +171,4 @@ Record it in `sessions.md`.
 - `references/role-skill-map.md`: when choosing a session's skill and name.
 - `references/monitoring-and-operator-gate.md`: when setting the loop, verifying a report, asking the operator, handling an answer or deciding to stop.
 - `references/pending-decisions-format.md`: when writing or reading `pending-decisions.md`, or running `scripts/pending-watch.sh`.
-- `scripts/pending-watch.sh`: the no-model watcher (`watch`, `synced`, `answers`, `list`, `line`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.
+- `scripts/pending-watch.sh`: the no-model watcher and the only writer of the ledger (`watch`, `add`, `record`, `seen`, `answers`, `list`, `line`, `synced`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.
