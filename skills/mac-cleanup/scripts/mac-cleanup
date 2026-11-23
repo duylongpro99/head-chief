@@ -1,0 +1,158 @@
+#!/bin/bash
+# mac-cleanup — kiểm tra dung lượng ổ đĩa và dọn những thứ an toàn.
+#
+#   mac-cleanup                 Chỉ báo cáo (không xoá gì)
+#   mac-cleanup --clean         Báo cáo + dọn cache package, Docker, build artifacts cũ (có hỏi xác nhận)
+#   mac-cleanup --clean --yes   Như trên, không hỏi
+#   mac-cleanup --days 60       Ngưỡng "project cũ" (mặc định 90 ngày không commit)
+#   mac-cleanup --root ~/code   Thư mục chứa project (lặp lại được; ghi đè file cấu hình)
+#
+# Thư mục project đọc từ ~/.config/mac-cleanup.conf (mỗi dòng một đường dẫn, ~ được hiểu),
+# mặc định: các thư mục có sẵn trong ~/personal ~/projects ~/code ~/dev ~/src.
+#
+# KHÔNG BAO GIỜ tự xoá: Docker named volumes (dữ liệu DB), iOS Simulator runtime,
+# Claude vm_bundles, cache trình duyệt/app, ứng dụng. Những mục này chỉ được báo cáo.
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/mac-cleanup.conf"
+PROJECT_ROOTS=()
+DAYS=90
+CLEAN=0
+YES=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --clean) CLEAN=1 ;;
+    --yes|-y) YES=1 ;;
+    --days) shift; DAYS="$1" ;;
+    --root) shift; PROJECT_ROOTS+=("$1") ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    *) echo "Tham số không hợp lệ: $1"; exit 1 ;;
+  esac
+  shift
+done
+
+if [ ${#PROJECT_ROOTS[@]} -eq 0 ] && [ -f "$CONF" ]; then
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    PROJECT_ROOTS+=("${line/#\~/$HOME}")
+  done < "$CONF"
+fi
+if [ ${#PROJECT_ROOTS[@]} -eq 0 ]; then
+  for d in "$HOME/personal" "$HOME/projects" "$HOME/code" "$HOME/dev" "$HOME/src"; do
+    [ -d "$d" ] && PROJECT_ROOTS+=("$d")
+  done
+fi
+
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'
+h() { printf "\n${B}== %s ==${R}\n" "$1"; }
+has() { command -v "$1" >/dev/null 2>&1; }
+sz() { du -sh "$1" 2>/dev/null | cut -f1; }
+free_kb() { df -k /System/Volumes/Data | awk 'NR==2{print $4}'; }
+
+START_FREE=$(free_kb)
+CUTOFF=$(date -v-"${DAYS}"d +%F)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+# ---------------------------------------------------------------- BÁO CÁO
+h "Ổ đĩa"
+df -h /System/Volumes/Data | awk 'NR==2{print "Đã dùng " $3 " / " $2 ", còn trống " $4}'
+
+h "Thư mục lớn nhất trong home"
+du -xhd1 "$HOME" 2>/dev/null | sort -rh | sed -n '2,13p'
+
+h "~/Library (Caches / Application Support / Containers)"
+du -xhd1 "$HOME/Library/Caches" "$HOME/Library/Application Support" "$HOME/Library/Containers" 2>/dev/null \
+  | sort -rh | sed -n '1,15p'
+
+h "Cache package (dọn an toàn, tải lại khi cần)"
+for p in "$HOME/.npm" "$HOME/Library/Caches/Yarn" "$HOME/Library/pnpm" "$HOME/Library/Caches/pnpm" \
+         "$HOME/go/pkg/mod" "$HOME/.bun/install/cache" "$HOME/.cache/uv" "$HOME/Library/Caches/pip" \
+         "$HOME/Library/Caches/Homebrew" "$HOME/Library/Caches/goimports" "$HOME/.cache/puppeteer"; do
+  [ -e "$p" ] && printf "%8s  %s\n" "$(sz "$p")" "${p/#$HOME/~}"
+done
+
+h "Ứng dụng lớn (và lần mở cuối)"
+du -xhd1 /Applications 2>/dev/null | sort -rh | sed -n '2,13p' | while IFS=$'\t' read -r s a; do
+  last=$(mdls -raw -name kMDItemLastUsedDate "$a" 2>/dev/null | cut -c1-10)
+  [ "$last" = "(null)" ] && last="chưa ghi nhận"
+  printf "%8s  %-40s %s\n" "$s" "$(basename "$a")" "${D}$last${R}"
+done
+
+h "Docker"
+if has docker && docker info >/dev/null 2>&1; then
+  docker system df
+  RAW="$HOME/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"
+  [ -f "$RAW" ] && echo "Docker.raw chiếm thật trên ổ: $(du -h "$RAW" | cut -f1) ${D}(con số 'SIZE' của volume có thể ảo)${R}"
+  echo "Named volumes (dữ liệu DB, KHÔNG tự xoá):"; docker volume ls -q | sed 's/^/  /'
+else
+  echo "Docker không chạy — bỏ qua"
+fi
+
+h "iOS Simulator runtime (KHÔNG tự xoá)"
+if has xcrun; then
+  xcrun simctl list runtimes 2>/dev/null | sed -n '2,$p'
+  echo "Đang boot: $(xcrun simctl list devices booted 2>/dev/null | grep -c Booted) simulator"
+  echo "${D}Xoá: xcrun simctl runtime delete <UUID>  (xem UUID: xcrun simctl runtime list)${R}"
+fi
+
+h "Build artifacts trong project không commit > $DAYS ngày (trước $CUTOFF)"
+echo "${D}Quét: ${PROJECT_ROOTS[*]/#$HOME/~}${R}"
+[ ${#PROJECT_ROOTS[@]} -gt 0 ] && find "${PROJECT_ROOTS[@]}" -maxdepth 6 -type d \
+  \( -name node_modules -o -name target -o -name .next -o -name .venv -o -name venv -o -name .turbo \) \
+  -prune 2>/dev/null | while IFS= read -r d; do
+    p=$(dirname "$d")
+    last=$(git -C "$p" log -1 --format=%cs 2>/dev/null)
+    [ -z "$last" ] && last=$(stat -f %Sm -t %F "$p")
+    [ "$last" \< "$CUTOFF" ] && printf "%s\t%s\t%s\n" "$(du -sk "$d" | cut -f1)" "$last" "$d"
+  done > "$TMP/stale.tsv"
+if [ -s "$TMP/stale.tsv" ]; then
+  sort -rn "$TMP/stale.tsv" | awk -F'\t' -v home="$HOME" '$1>10240{sub(home,"~",$3); printf "%7.0fM  %s  %s\n",$1/1024,$2,$3}' | head -25
+  awk -F'\t' '{t+=$1} END{printf "Tổng: %.1f GB trong %d thư mục\n",t/1048576,NR}' "$TMP/stale.tsv"
+else
+  echo "Không có"
+fi
+
+h "Chỉ báo cáo — tự quyết"
+for p in "$HOME/Library/Application Support/Claude/vm_bundles" "$HOME/Library/Caches/Google/Chrome" \
+         "$HOME/Library/Caches/Arc" "$HOME/Library/Caches/com.spotify.client"; do
+  [ -e "$p" ] && printf "%8s  %s\n" "$(sz "$p")" "${p/#$HOME/~}"
+done
+echo "${D}Cache trình duyệt: xoá trong Settings của app. vm_bundles: thoát Claude Desktop rồi rm -rf.${R}"
+
+[ "$CLEAN" = 1 ] || { printf "\n${Y}Chưa xoá gì. Chạy 'mac-cleanup --clean' để dọn.${R}\n"; exit 0; }
+
+# ---------------------------------------------------------------- DỌN
+confirm() { [ "$YES" = 1 ] && return 0; read -r -p "$1 [y/N] " a; [ "$a" = y ] || [ "$a" = Y ]; }
+run() { printf "${G}→ %s${R}\n" "$*"; "$@" 2>&1 | tail -2; }
+
+h "Dọn cache package"
+if confirm "Dọn npm/yarn/pnpm/go/bun/uv/pip/brew cache?"; then
+  has npm   && run npm cache clean --force
+  has yarn  && run yarn cache clean
+  has pnpm  && run pnpm store prune
+  has go    && run go clean -modcache
+  has bun   && run bun pm cache rm
+  has uv    && run uv cache clean
+  has pip3  && run pip3 cache purge
+  has brew  && run brew cleanup -s
+  rm -rf "$HOME/Library/Caches/goimports"
+fi
+
+h "Dọn Docker (image không dùng + volume ẩn danh; giữ named volumes)"
+if has docker && docker info >/dev/null 2>&1 && confirm "Prune Docker?"; then
+  run docker image prune -a -f
+  run docker volume prune -f
+  run docker builder prune -f
+fi
+
+h "Xoá build artifacts cũ"
+if [ -s "$TMP/stale.tsv" ] && confirm "Xoá các thư mục đã liệt kê ở trên?"; then
+  cut -f3 "$TMP/stale.tsv" | while IFS= read -r d; do
+    case "$d" in */node_modules|*/target|*/.next|*/.venv|*/venv|*/.turbo) rm -rf "$d" ;; esac
+  done
+  echo "Đã xoá."
+fi
+
+END_FREE=$(free_kb)
+printf "\n${B}Thu hồi được: %.1f GB${R}\n" "$(echo "($END_FREE - $START_FREE)/1048576" | bc -l)"
+df -h /System/Volumes/Data | awk 'NR==2{print "Hiện tại: đã dùng " $3 ", còn trống " $4}'

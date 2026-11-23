@@ -69,7 +69,7 @@ This repo ships five skills that work together. Install only what you need.
 | **`envoy-peer`** | Hand one task with acceptance criteria to a different agent CLI (codex, grok, omp, agy, …) in its own Herdr pane, have an independent reviewer pane check it, and loop fix → re-review until accepted. Only the status, a short summary and file paths come back. |
 | **`roadmap-supervisor`** | Drive a roadmap of milestones, or one plan of phases, to completion through single-purpose worker sessions (plan, cook, review, debug), each with a brief file. Relays your decisions through a ledger in `~/supervisor` and closes every session it opened. Needs `managed-session`. |
 
-The repo also holds three standalone skills outside the orchestration group: `ak-proposal-review` (review a proposal as a local HTML draft with per-section feedback), `ui-paper-pencil-design` (the paper-and-pencil page style used in the intro video) and `mac-app-leftovers` (find the files that uninstalled macOS apps left behind, with sizes per app, and move them to the Trash; it also runs without an agent through `uv run`, see [its README](skills/mac-app-leftovers/README.md)).
+The repo also holds four standalone skills outside the orchestration group: `ak-proposal-review` (review a proposal as a local HTML draft with per-section feedback), `ui-paper-pencil-design` (the paper-and-pencil page style used in the intro video) and `mac-app-leftovers` (find the files that uninstalled macOS apps left behind, with sizes per app, and move them to the Trash; it also runs without an agent through `uv run`, see [its README](skills/mac-app-leftovers/README.md)) and `mac-cleanup` (report what fills the disk and prune package caches, unused Docker images and build artifacts of stale projects; also a plain `bash` script, `skills/mac-cleanup/scripts/mac-cleanup`).
 
 ## Usage
 
@@ -208,6 +208,7 @@ skills/
   ak-proposal-review/      # Standalone: local HTML proposal review
   ui-paper-pencil-design/  # Standalone: paper-and-pencil page style
   mac-app-leftovers/       # Standalone: find and clean leftovers of uninstalled macOS apps (also a uv script)
+  mac-cleanup/             # Standalone: disk-usage report and safe cleanup (also a bash script)
 assets/                    # README intro video (MP4 + GIF preview)
 video/                     # Remotion source of the intro video
 install.sh                 # Symlink skills from this checkout into a host's skill folder
