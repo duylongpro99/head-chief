@@ -1,57 +1,136 @@
 #!/bin/bash
-# mac-cleanup — kiểm tra dung lượng ổ đĩa và dọn những thứ an toàn.
+# mac-cleanup — kiểm tra dung lượng ổ đĩa và dọn theo nhóm.
 #
-#   mac-cleanup                 Chỉ báo cáo (không xoá gì)
-#   mac-cleanup --clean         Báo cáo + dọn cache package, Docker, build artifacts cũ (có hỏi xác nhận)
-#   mac-cleanup --clean --yes   Như trên, không hỏi
-#   mac-cleanup --days 60       Ngưỡng "project cũ" (mặc định 90 ngày không commit)
-#   mac-cleanup --root ~/code   Thư mục chứa project (lặp lại được; ghi đè file cấu hình)
+#   mac-cleanup                       Chỉ báo cáo + gợi ý lệnh xoá (không xoá gì)
+#   mac-cleanup --clean               Dọn các nhóm đã chọn (mặc định: caches docker artifacts), hỏi y/N từng nhóm
+#   mac-cleanup --clean --yes         Như trên, không hỏi
+#   mac-cleanup --clean --only caches,artifacts      Chỉ dọn các nhóm này
+#   mac-cleanup --clean --add claude-vm,app-caches   Thêm nhóm vào danh sách mặc định
+#   mac-cleanup --clean --skip docker                Bỏ nhóm khỏi danh sách
+#   mac-cleanup --days 60             Ngưỡng "project cũ" (mặc định 90 ngày không commit)
+#   mac-cleanup --root ~/code         Thư mục chứa project (lặp lại được; ghi đè file cấu hình)
+#   mac-cleanup --groups              Liệt kê các nhóm
 #
-# Thư mục project đọc từ ~/.config/mac-cleanup.conf (mỗi dòng một đường dẫn, ~ được hiểu),
-# mặc định: các thư mục có sẵn trong ~/personal ~/projects ~/code ~/dev ~/src.
+# Nhóm mặc định (an toàn, tải/tạo lại khi cần):
+#   caches          cache npm, yarn, pnpm, go, bun, uv, pip, brew
+#   docker          Docker image không dùng, volume ẩn danh, build cache
+#   artifacts       node_modules/target/.next/.venv/.turbo trong project không commit > N ngày
+# Nhóm chỉ dọn khi bật (--add / --only / clean= trong file cấu hình):
+#   docker-volumes  Docker named volume không container nào dùng (MẤT dữ liệu DB local)
+#   simulators      iOS Simulator runtime không simulator nào dùng + simulator "unavailable"
+#   claude-vm       máy ảo của Claude Desktop (vm_bundles, tải lại khi cần; bỏ qua nếu Claude đang chạy)
+#   app-caches      cache Chrome/Arc/Firefox/Spotify/VSCode updater (bỏ qua app đang chạy)
 #
-# KHÔNG BAO GIỜ tự xoá: Docker named volumes (dữ liệu DB), iOS Simulator runtime,
-# Claude vm_bundles, cache trình duyệt/app, ứng dụng. Những mục này chỉ được báo cáo.
+# File cấu hình ~/.config/mac-cleanup.conf (option dòng lệnh được ưu tiên hơn):
+#   ~/personal                  # dòng là đường dẫn = thư mục project (hoặc: root = ~/code)
+#   clean = caches artifacts claude-vm   # thay danh sách nhóm mặc định
+#   skip  = docker              # luôn bỏ qua nhóm này
+#   days  = 60
+#
+# Ứng dụng trong /Applications không bao giờ bị xoá; script chỉ gợi ý lệnh.
+
+DEFAULT_GROUPS="caches docker artifacts"
+OPTIN_GROUPS="docker-volumes simulators claude-vm app-caches"
+ALL_GROUPS="$DEFAULT_GROUPS $OPTIN_GROUPS"
 
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/mac-cleanup.conf"
-PROJECT_ROOTS=()
-DAYS=90
-CLEAN=0
-YES=0
+CLEAN=0; YES=0
+CLI_ROOTS=(); CLI_DAYS=""; CLI_ONLY=""; CLI_ADD=""; CLI_SKIP=""
+
+die() { echo "$*" >&2; exit 1; }
+norm() { echo "$*" | tr ',' ' ' | xargs; }   # "a,b c" -> "a b c"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --clean) CLEAN=1 ;;
     --yes|-y) YES=1 ;;
-    --days) shift; DAYS="$1" ;;
-    --root) shift; PROJECT_ROOTS+=("$1") ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
-    *) echo "Tham số không hợp lệ: $1"; exit 1 ;;
+    --days) shift; CLI_DAYS="$1" ;;
+    --root) shift; CLI_ROOTS+=("$1") ;;
+    --only) shift; CLI_ONLY="$CLI_ONLY $(norm "$1")" ;;
+    --add)  shift; CLI_ADD="$CLI_ADD $(norm "$1")" ;;
+    --skip) shift; CLI_SKIP="$CLI_SKIP $(norm "$1")" ;;
+    --groups) sed -n '14,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "Tham số không hợp lệ: $1 (xem --help)" ;;
   esac
   shift
 done
 
-if [ ${#PROJECT_ROOTS[@]} -eq 0 ] && [ -f "$CONF" ]; then
-  while IFS= read -r line; do
+# ---- file cấu hình
+CONF_ROOTS=(); CONF_CLEAN=""; CONF_SKIP=""; CONF_DAYS=""
+if [ -f "$CONF" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(echo "$line" | sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     case "$line" in ''|'#'*) continue ;; esac
-    PROJECT_ROOTS+=("${line/#\~/$HOME}")
+    if [[ "$line" =~ ^([a-z]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
+      case "$key" in
+        clean) CONF_CLEAN="$(norm "$val")" ;;
+        skip)  CONF_SKIP="$(norm "$val")" ;;
+        days)  CONF_DAYS="$val" ;;
+        root)  CONF_ROOTS+=("${val/#\~/$HOME}") ;;
+        *) die "$CONF: khoá không hợp lệ '$key' (clean, skip, days, root)" ;;
+      esac
+    else
+      CONF_ROOTS+=("${line/#\~/$HOME}")
+    fi
   done < "$CONF"
 fi
-if [ ${#PROJECT_ROOTS[@]} -eq 0 ]; then
+
+# ---- thư mục project, ngưỡng ngày
+if [ ${#CLI_ROOTS[@]} -gt 0 ]; then PROJECT_ROOTS=("${CLI_ROOTS[@]}")
+elif [ ${#CONF_ROOTS[@]} -gt 0 ]; then PROJECT_ROOTS=("${CONF_ROOTS[@]}")
+else
+  PROJECT_ROOTS=()
   for d in "$HOME/personal" "$HOME/projects" "$HOME/code" "$HOME/dev" "$HOME/src"; do
     [ -d "$d" ] && PROJECT_ROOTS+=("$d")
   done
 fi
+DAYS="${CLI_DAYS:-${CONF_DAYS:-90}}"
+case "$DAYS" in ''|*[!0-9]*) die "--days phải là số nguyên: $DAYS" ;; esac
 
-B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'
+# ---- nhóm sẽ dọn
+in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
+for g in $CLI_ONLY $CLI_ADD $CLI_SKIP $CONF_CLEAN $CONF_SKIP; do
+  in_list "$g" "$ALL_GROUPS" || die "Nhóm không hợp lệ: '$g'. Các nhóm: $ALL_GROUPS"
+done
+if [ -n "$(norm "$CLI_ONLY")" ]; then SELECTED="$(norm "$CLI_ONLY")"
+elif [ -n "$CONF_CLEAN" ]; then SELECTED="$CONF_CLEAN"
+else SELECTED="$DEFAULT_GROUPS"; fi
+SELECTED="$SELECTED $(norm "$CLI_ADD")"
+CLEAN_GROUPS=""
+for g in $ALL_GROUPS; do   # giữ thứ tự chuẩn, bỏ trùng, áp dụng skip
+  in_list "$g" "$SELECTED" && ! in_list "$g" "$CONF_SKIP $CLI_SKIP" && CLEAN_GROUPS="$CLEAN_GROUPS $g"
+done
+CLEAN_GROUPS="$(norm "$CLEAN_GROUPS")"
+want() { in_list "$1" "$CLEAN_GROUPS"; }
+
+# ---- tiện ích
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; C=$'\033[36m'; R=$'\033[0m'
 h() { printf "\n${B}== %s ==${R}\n" "$1"; }
 has() { command -v "$1" >/dev/null 2>&1; }
 sz() { du -sh "$1" 2>/dev/null | cut -f1; }
 free_kb() { df -k /System/Volumes/Data | awk 'NR==2{print $4}'; }
+tilde() { echo "${1/#$HOME/~}"; }
+q() { case "$1" in "$HOME"/*) printf '~/"%s"' "${1#$HOME/}" ;; *) printf '"%s"' "$1" ;; esac; }  # đường dẫn dán được vào shell
+cmd() { printf "    ${C}%s${R}\n" "$*"; }          # in lệnh gợi ý
+hint() { printf "    ${D}%s${R}\n" "$*"; }
+running() { pgrep -xq "$1"; }
+docker_up() { has docker && docker info >/dev/null 2>&1; }
 
 START_FREE=$(free_kb)
 CUTOFF=$(date -v-"${DAYS}"d +%F)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+CLAUDE_VM="$HOME/Library/Application Support/Claude/vm_bundles"
+# Cache ứng dụng: "tên process|đường dẫn"
+APP_CACHES=(
+  "Google Chrome|$HOME/Library/Caches/Google/Chrome"
+  "Arc|$HOME/Library/Caches/Arc"
+  "firefox|$HOME/Library/Caches/Firefox"
+  "Spotify|$HOME/Library/Caches/com.spotify.client"
+  "Code|$HOME/Library/Caches/com.microsoft.VSCode.ShipIt"
+)
 
 # ---------------------------------------------------------------- BÁO CÁO
 h "Ổ đĩa"
@@ -64,39 +143,41 @@ h "~/Library (Caches / Application Support / Containers)"
 du -xhd1 "$HOME/Library/Caches" "$HOME/Library/Application Support" "$HOME/Library/Containers" 2>/dev/null \
   | sort -rh | sed -n '1,15p'
 
-h "Cache package (dọn an toàn, tải lại khi cần)"
+h "[caches] Cache package (tải lại khi cần)"
 for p in "$HOME/.npm" "$HOME/Library/Caches/Yarn" "$HOME/Library/pnpm" "$HOME/Library/Caches/pnpm" \
          "$HOME/go/pkg/mod" "$HOME/.bun/install/cache" "$HOME/.cache/uv" "$HOME/Library/Caches/pip" \
          "$HOME/Library/Caches/Homebrew" "$HOME/Library/Caches/goimports" "$HOME/.cache/puppeteer"; do
-  [ -e "$p" ] && printf "%8s  %s\n" "$(sz "$p")" "${p/#$HOME/~}"
+  [ -e "$p" ] && printf "%8s  %s\n" "$(sz "$p")" "$(tilde "$p")"
 done
 
-h "Ứng dụng lớn (và lần mở cuối)"
-du -xhd1 /Applications 2>/dev/null | sort -rh | sed -n '2,13p' | while IFS=$'\t' read -r s a; do
+h "Ứng dụng lớn (không bao giờ tự xoá)"
+du -xhd1 /Applications 2>/dev/null | sort -rh | sed -n '2,13p' > "$TMP/apps.tsv"
+while IFS=$'\t' read -r s a; do
   last=$(mdls -raw -name kMDItemLastUsedDate "$a" 2>/dev/null | cut -c1-10)
   [ "$last" = "(null)" ] && last="chưa ghi nhận"
   printf "%8s  %-40s %s\n" "$s" "$(basename "$a")" "${D}$last${R}"
-done
+  case "$last" in [0-9]*) [ "$last" \< "$CUTOFF" ] && echo "$a" >> "$TMP/old_apps" ;; esac
+done < "$TMP/apps.tsv"
+if [ -s "$TMP/old_apps" ]; then
+  hint "Không mở > $DAYS ngày. Gỡ (vào Thùng rác; app có trình gỡ riêng thì dùng trình gỡ đó):"
+  while IFS= read -r a; do cmd "mv \"$a\" ~/.Trash/"; done < "$TMP/old_apps"
+  hint "Sau khi gỡ, tìm file sót lại bằng skill mac-app-leftovers."
+fi
+hint "\"chưa ghi nhận\" không có nghĩa là không dùng (vd: game mở qua launcher riêng)."
 
-h "Docker"
-if has docker && docker info >/dev/null 2>&1; then
+h "[docker] Docker"
+if docker_up; then
   docker system df
   RAW="$HOME/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"
-  [ -f "$RAW" ] && echo "Docker.raw chiếm thật trên ổ: $(du -h "$RAW" | cut -f1) ${D}(con số 'SIZE' của volume có thể ảo)${R}"
-  echo "Named volumes (dữ liệu DB, KHÔNG tự xoá):"; docker volume ls -q | sed 's/^/  /'
+  [ -f "$RAW" ] && echo "Docker.raw chiếm thật trên ổ: $(du -h "$RAW" | cut -f1 | xargs) ${D}(SIZE của volume có thể ảo)${R}"
 else
   echo "Docker không chạy — bỏ qua"
 fi
 
-h "iOS Simulator runtime (KHÔNG tự xoá)"
-if has xcrun; then
-  xcrun simctl list runtimes 2>/dev/null | sed -n '2,$p'
-  echo "Đang boot: $(xcrun simctl list devices booted 2>/dev/null | grep -c Booted) simulator"
-  echo "${D}Xoá: xcrun simctl runtime delete <UUID>  (xem UUID: xcrun simctl runtime list)${R}"
-fi
-
-h "Build artifacts trong project không commit > $DAYS ngày (trước $CUTOFF)"
-echo "${D}Quét: ${PROJECT_ROOTS[*]/#$HOME/~}${R}"
+h "[artifacts] Build artifacts trong project không commit > $DAYS ngày (trước $CUTOFF)"
+roots_txt=""; for r in "${PROJECT_ROOTS[@]}"; do roots_txt="$roots_txt $(tilde "$r")"; done
+echo "${D}Quét:${roots_txt:- (không có thư mục nào)}${R}"
+: > "$TMP/stale.tsv"
 [ ${#PROJECT_ROOTS[@]} -gt 0 ] && find "${PROJECT_ROOTS[@]}" -maxdepth 6 -type d \
   \( -name node_modules -o -name target -o -name .next -o -name .venv -o -name venv -o -name .turbo \) \
   -prune 2>/dev/null | while IFS= read -r d; do
@@ -112,12 +193,74 @@ else
   echo "Không có"
 fi
 
-h "Chỉ báo cáo — tự quyết"
-for p in "$HOME/Library/Application Support/Claude/vm_bundles" "$HOME/Library/Caches/Google/Chrome" \
-         "$HOME/Library/Caches/Arc" "$HOME/Library/Caches/com.spotify.client"; do
-  [ -e "$p" ] && printf "%8s  %s\n" "$(sz "$p")" "${p/#$HOME/~}"
+# ---- nhóm chỉ dọn khi bật: báo cáo + lệnh gợi ý
+h "[docker-volumes] Docker named volumes (dữ liệu DB local)"
+if docker_up; then
+  docker system df -v 2>/dev/null | awk '/^Local Volumes space usage/{f=1;getline;getline;next} f&&NF==0{exit} f' > "$TMP/vols"
+  if [ -s "$TMP/vols" ]; then
+    printf "%8s  %-6s %s\n" SIZE "LINKS" NAME
+    awk '{printf "%8s  %-6s %s\n",$3,$2,$1}' "$TMP/vols"
+    hint "LINKS 0 = không container nào dùng. Xoá một volume (mất dữ liệu trong đó):"
+    awk '$2==0{print $1}' "$TMP/vols" | head -5 | while read -r v; do cmd "docker volume rm $v"; done
+    hint "Xoá mọi volume không dùng:"; cmd "docker volume prune -a -f"
+  else
+    echo "Không có"
+  fi
+else
+  echo "Docker không chạy — bỏ qua"
+fi
+
+h "[simulators] iOS Simulator runtime"
+: > "$TMP/runtimes.tsv"
+if has xcrun && has python3; then
+  xcrun simctl runtime list -j > "$TMP/rt.json" 2>/dev/null
+  xcrun simctl list devices -j > "$TMP/dev.json" 2>/dev/null
+  python3 -I - "$TMP/rt.json" "$TMP/dev.json" > "$TMP/runtimes.tsv" 2>/dev/null <<'PY'
+import json, sys
+rt = json.load(open(sys.argv[1])); dev = json.load(open(sys.argv[2])).get("devices", {})
+for uuid, r in rt.items():
+    devices = dev.get(r.get("runtimeIdentifier", ""), [])
+    booted = sum(1 for d in devices if d.get("state") == "Booted")
+    print("\t".join([uuid, f'{r.get("version","?")} ({r.get("build","?")})',
+                     f'{r.get("sizeBytes",0)/2**30:.1f}G', str(len(devices)), str(booted),
+                     "yes" if r.get("deletable") else "no"]))
+PY
+  if [ -s "$TMP/runtimes.tsv" ]; then
+    printf "%6s  %-22s %-9s %s\n" SIZE VERSION DEVICES UUID
+    awk -F'\t' '{printf "%6s  %-22s %-9s %s\n",$3,$2,$4 ($5>0?" (boot)":""),$1}' "$TMP/runtimes.tsv"
+    hint "Xoá runtime (simulator dùng nó cũng mất theo):"
+    awk -F'\t' '$6=="yes"{print $1}' "$TMP/runtimes.tsv" | while read -r u; do cmd "xcrun simctl runtime delete $u"; done
+    hint "Xoá simulator không còn runtime:"; cmd "xcrun simctl delete unavailable"
+  else
+    echo "Không có"
+  fi
+else
+  echo "Không có Xcode command line tools — bỏ qua"
+fi
+
+h "[claude-vm] Máy ảo Claude Desktop"
+if [ -e "$CLAUDE_VM" ]; then
+  printf "%8s  %s\n" "$(sz "$CLAUDE_VM")" "$(tilde "$CLAUDE_VM")"
+  hint "Dùng cho tính năng chạy code/Cowork của Claude Desktop; tải lại khi cần. Thoát Claude rồi:"
+  cmd "rm -rf $(q "$CLAUDE_VM")"
+else
+  echo "Không có"
+fi
+
+h "[app-caches] Cache ứng dụng"
+found=0
+for e in "${APP_CACHES[@]}"; do
+  proc="${e%%|*}"; p="${e#*|}"
+  [ -e "$p" ] || continue; found=1
+  st=""; running "$proc" && st=" ${Y}(đang chạy — thoát app trước)${R}"
+  printf "%8s  %s%s\n" "$(sz "$p")" "$(tilde "$p")" "$st"
+  cmd "rm -rf $(q "$p")"
 done
-echo "${D}Cache trình duyệt: xoá trong Settings của app. vm_bundles: thoát Claude Desktop rồi rm -rf.${R}"
+[ "$found" = 0 ] && echo "Không có"
+
+printf "\n${B}Nhóm sẽ dọn với --clean:${R} %s\n" "${CLEAN_GROUPS:-(không có)}"
+off=""; for g in $ALL_GROUPS; do want "$g" || off="$off $g"; done
+[ -n "$off" ] && echo "${D}Không dọn:${off}  (bật: --add <nhóm>, hoặc clean= trong $(tilde "$CONF"))${R}"
 
 [ "$CLEAN" = 1 ] || { printf "\n${Y}Chưa xoá gì. Chạy 'mac-cleanup --clean' để dọn.${R}\n"; exit 0; }
 
@@ -125,34 +268,86 @@ echo "${D}Cache trình duyệt: xoá trong Settings của app. vm_bundles: thoá
 confirm() { [ "$YES" = 1 ] && return 0; read -r -p "$1 [y/N] " a; [ "$a" = y ] || [ "$a" = Y ]; }
 run() { printf "${G}→ %s${R}\n" "$*"; "$@" 2>&1 | tail -2; }
 
-h "Dọn cache package"
-if confirm "Dọn npm/yarn/pnpm/go/bun/uv/pip/brew cache?"; then
-  has npm   && run npm cache clean --force
-  has yarn  && run yarn cache clean
-  has pnpm  && run pnpm store prune
-  has go    && run go clean -modcache
-  has bun   && run bun pm cache rm
-  has uv    && run uv cache clean
-  has pip3  && run pip3 cache purge
-  has brew  && run brew cleanup -s
-  rm -rf "$HOME/Library/Caches/goimports"
+if want caches; then
+  h "Dọn [caches]"
+  if confirm "Dọn npm/yarn/pnpm/go/bun/uv/pip/brew cache?"; then
+    has npm   && run npm cache clean --force
+    has yarn  && run yarn cache clean
+    has pnpm  && run pnpm store prune
+    has go    && run go clean -modcache
+    has bun   && run bun pm cache rm
+    has uv    && run uv cache clean
+    has pip3  && run pip3 cache purge
+    has brew  && run brew cleanup -s
+    rm -rf "$HOME/Library/Caches/goimports"
+  fi
 fi
 
-h "Dọn Docker (image không dùng + volume ẩn danh; giữ named volumes)"
-if has docker && docker info >/dev/null 2>&1 && confirm "Prune Docker?"; then
-  run docker image prune -a -f
-  run docker volume prune -f
-  run docker builder prune -f
+if want docker; then
+  h "Dọn [docker] (image không dùng, volume ẩn danh, build cache)"
+  if ! docker_up; then echo "Docker không chạy — bỏ qua"
+  elif confirm "Prune Docker?"; then
+    run docker image prune -a -f
+    run docker volume prune -f
+    run docker builder prune -f
+  fi
 fi
 
-h "Xoá build artifacts cũ"
-if [ -s "$TMP/stale.tsv" ] && confirm "Xoá các thư mục đã liệt kê ở trên?"; then
-  cut -f3 "$TMP/stale.tsv" | while IFS= read -r d; do
-    case "$d" in */node_modules|*/target|*/.next|*/.venv|*/venv|*/.turbo) rm -rf "$d" ;; esac
-  done
-  echo "Đã xoá."
+if want artifacts; then
+  h "Dọn [artifacts]"
+  if [ ! -s "$TMP/stale.tsv" ]; then echo "Không có gì để xoá"
+  elif confirm "Xoá các build artifacts đã liệt kê?"; then
+    cut -f3 "$TMP/stale.tsv" | while IFS= read -r d; do
+      case "$d" in */node_modules|*/target|*/.next|*/.venv|*/venv|*/.turbo) rm -rf "$d" ;; esac
+    done
+    echo "Đã xoá."
+  fi
+fi
+
+if want docker-volumes; then
+  h "Dọn [docker-volumes] — MẤT dữ liệu trong các volume không dùng"
+  if ! docker_up; then echo "Docker không chạy — bỏ qua"
+  elif confirm "Xoá mọi Docker volume không container nào dùng?"; then
+    run docker volume prune -a -f
+  fi
+fi
+
+if want simulators; then
+  h "Dọn [simulators] (runtime không simulator nào dùng + simulator unavailable)"
+  if ! has xcrun; then echo "Không có Xcode — bỏ qua"
+  elif confirm "Xoá simulator unavailable và runtime không dùng?"; then
+    run xcrun simctl delete unavailable
+    awk -F'\t' '$4==0 && $6=="yes"{print $1}' "$TMP/runtimes.tsv" > "$TMP/unused_rt"
+    if [ -s "$TMP/unused_rt" ]; then
+      while read -r u; do run xcrun simctl runtime delete "$u"; done < "$TMP/unused_rt"
+    else
+      echo "Không có runtime nào không dùng. Runtime còn simulator thì xoá bằng lệnh gợi ý ở trên."
+    fi
+  fi
+fi
+
+if want claude-vm; then
+  h "Dọn [claude-vm]"
+  if [ ! -e "$CLAUDE_VM" ]; then echo "Không có"
+  elif running Claude; then echo "Claude Desktop đang chạy — thoát app rồi chạy lại"
+  elif confirm "Xoá $(tilde "$CLAUDE_VM")?"; then
+    rm -rf "$CLAUDE_VM" && echo "Đã xoá."
+  fi
+fi
+
+if want app-caches; then
+  h "Dọn [app-caches]"
+  if confirm "Xoá cache của các app không đang chạy?"; then
+    for e in "${APP_CACHES[@]}"; do
+      proc="${e%%|*}"; p="${e#*|}"
+      [ -e "$p" ] || continue
+      if running "$proc"; then echo "Bỏ qua $(tilde "$p") — $proc đang chạy"
+      else rm -rf "$p" && echo "Đã xoá $(tilde "$p")"; fi
+    done
+  fi
 fi
 
 END_FREE=$(free_kb)
-printf "\n${B}Thu hồi được: %.1f GB${R}\n" "$(echo "($END_FREE - $START_FREE)/1048576" | bc -l)"
+FREED=$(( END_FREE > START_FREE ? END_FREE - START_FREE : 0 ))
+printf "\n${B}Thu hồi được: %.1f GB${R}\n" "$(echo "$FREED/1048576" | bc -l)"
 df -h /System/Volumes/Data | awk 'NR==2{print "Hiện tại: đã dùng " $3 ", còn trống " $4}'
