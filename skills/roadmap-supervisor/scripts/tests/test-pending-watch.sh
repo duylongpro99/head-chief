@@ -304,7 +304,7 @@ else fail "a concurrent edit makes record exit 3 and write nothing" "rc=$rc out=
 total=$((total + 1)); new_case add
 { item 1 OPEN ' ' ''; item 2 OPEN ' ' ''; item 3 OPEN ' ' ''; } | sup_write
 "$SCRIPT" record "$D" D3 dialog 'A (Recommended)' > /dev/null
-id="$(printf 'M6\nCâu hỏi: giữ ngưỡng?\n- A (đề xuất): giữ\nChặn: p02-cook\n' | "$SCRIPT" add "$D" 2>&1)"; rc=$?
+id="$(printf 'M6\nCâu hỏi: giữ ngưỡng?\n- A (đề xuất): giữ\nChặn: p02-cook\n' | "$SCRIPT" add "$D" 2>/dev/null)"; rc=$?
 if [ "$rc" = 0 ] && [ "$id" = D4 ] && "$SCRIPT" line "$D" > /dev/null \
    && grep -qE '^## D4 · M6 · OPEN · [0-9-]{10} [0-9:]{5}$' "$D/pending-decisions.md" \
    && [ "$("$SCRIPT" list "$D" | tail -n 1)" = "D4 · M6 · unseen · Câu hỏi: giữ ngưỡng?" ] \
@@ -419,8 +419,8 @@ else fail "a migration that meets an operator save writes nothing" "rc=$rc out=$
 total=$((total + 1)); new_project closing
 "$SCRIPT" init "$D" --session c > /dev/null
 F="$SH/closing--c.md"
-printf 'M2\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null
-printf 'M2\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null
+printf 'M2\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null 2>&1
+printf 'M2\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null 2>&1
 "$SCRIPT" record "$D" D2 chat 'A' > /dev/null
 start_watch
 out="$("$SCRIPT" close "$D" 2>/dev/null)"; rc=$?
@@ -458,12 +458,12 @@ else fail "a stale archive copy with another answer is refused" "rc=$rc out=$out
 # 33. A supervisor started again after close gets its OPEN items back and never reuses a number.
 total=$((total + 1)); new_project restart
 "$SCRIPT" init "$D" --session s > /dev/null
-printf 'M1\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null
-printf 'M1\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null
+printf 'M1\nCâu hỏi: still open?\n' | "$SCRIPT" add "$D" > /dev/null 2>&1
+printf 'M1\nCâu hỏi: answered?\n' | "$SCRIPT" add "$D" > /dev/null 2>&1
 "$SCRIPT" record "$D" D2 chat 'A' > /dev/null
 "$SCRIPT" close "$D" > /dev/null
 out="$("$SCRIPT" init "$D" --session s 2>&1)"; rc=$?
-next="$(printf 'M1\nCâu hỏi: new?\n' | "$SCRIPT" add "$D")"
+next="$(printf 'M1\nCâu hỏi: new?\n' | "$SCRIPT" add "$D" 2>/dev/null)"
 RD="$(cd "$D" && pwd -P)"
 if [ "$rc" = 0 ] && [ "$(cat "$D/ledger.path")" = "$SH/restart--s.md" ] && [ "$next" = D3 ] \
    && [ -f "$RD/pending-decisions.final.md.migrated" ] && [ ! -e "$RD/pending-decisions.final.md" ] \
@@ -498,6 +498,40 @@ if [ "$rc" = 0 ] && [ "$out" = "$F" ] && [ "$(sed -n 2p "$F")" = "Project: nogit
   ok "outside git, init uses the folder holding .claude as the project"
 else fail "outside git, init uses the folder holding .claude as the project" "rc=$rc out=$out"; fi
 "$SCRIPT" close "$D" > /dev/null 2>&1 || true
+
+# The command line the script prints for <subcommand> on the current folder.
+run_line() { printf '%q %s %q' "$(cd "$HERE/.." && pwd -P)/pending-watch.sh" "$1" "$(cd "$D" && pwd -P)"; }
+
+# 37. add warns on stderr when no watcher runs, with the command that starts one, and is silent when one runs.
+total=$((total + 1)); new_case add-watcher-warning
+id="$(printf 'M1\nCâu hỏi: q1?\n' | "$SCRIPT" add "$D" 2> "$D/add.err")"; rc=$?
+warning="pending-watch: no watcher is running, so D1 gets no badge or notification and a file answer will not wake you; start it with run_in_background: $(run_line watch)"
+start_watch
+id2="$(printf 'M1\nCâu hỏi: q2?\n' | "$SCRIPT" add "$D" 2> "$D/add2.err")"; rc2=$?
+if [ "$rc" = 0 ] && [ "$id" = D1 ] && [ "$(cat "$D/add.err")" = "$warning" ] \
+   && [ "$rc2" = 0 ] && [ "$id2" = D2 ] && [ ! -s "$D/add2.err" ]; then
+  ok "add warns when no watcher runs and stays silent when one does"
+else fail "add warns when no watcher runs and stays silent when one does" "rc=$rc id=$id err=$(cat "$D/add.err") rc2=$rc2 id2=$id2 err2=$(cat "$D/add2.err")"; fi
+stop_watch
+
+# 38. The user-edit exit keeps its first line and then lists the steps that must follow.
+total=$((total + 1)); new_case user-edit-steps
+item 1 OPEN ' ' '' | sup_write
+start_watch
+wait_for 10 logged "tab rename W:t1 sup ⏳1"
+sed -i.bak 's/^Answer:$/Answer: A/' "$D/pending-decisions.md" && rm -f "$D/pending-decisions.md.bak"
+expected="pending-watch: user-edit
+pending-watch: next, in order:
+  1. $(run_line answers)
+  2. $(run_line record) D<n> file   # once for each item answers printed
+  3. $(run_line synced)
+  4. $(run_line watch)   # with run_in_background"
+if wait_for 10 dead "$WPID"; then
+  wait "$WPID"; rc=$?; WPID=""
+  got="$(sed -n '/^pending-watch: user-edit$/,$p' "$D/watch.out")"
+  if [ "$rc" = 0 ] && [ "$got" = "$expected" ]; then ok "user-edit exit lists the next steps after its unchanged first line"
+  else fail "user-edit exit lists the next steps after its unchanged first line" "rc=$rc out=$(cat "$D/watch.out")"; fi
+else fail "user-edit exit lists the next steps after its unchanged first line" "watcher still running"; stop_watch; fi
 
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

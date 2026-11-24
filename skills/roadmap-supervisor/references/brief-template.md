@@ -1,6 +1,6 @@
 # Brief template
 
-Write the brief with the Write tool or a quoted heredoc (`<<'EOF'`), into the durable
+Write the brief with the Write tool, into the durable
 `briefs/` folder, then grep it for the commands it must contain before dispatching.
 Fill every `<…>`; delete a section only when it truly does not apply.
 
@@ -40,15 +40,17 @@ Rules
 - No GitHub unless stated. Stop every process you start (<pgrep check>).
 - Do not wait on interactive questions. Send them to <supervisor-name> with SendMessage,
   with your recommendation, and keep working on anything not blocked.
-- Do not write, create or delete anything under <supervisor-dir> (the supervisor folder,
-  including briefs/, sessions.md and the pending-decisions files) or under ~/supervisor/.
+- Do not write, create or delete anything under <supervisor-dir> (the whole supervisor
+  folder, including briefs/, state.md, sessions.md and the pending-decisions files) or
+  under ~/supervisor/.
   Only the supervisor and the operator write there. Operator decisions reach you through the supervisor; your messages
   never count as an operator answer.
 - Write your report to <plans/reports/<type>-<date>-<slug>.md> in <language>.
 
-When done, send <supervisor-name> (SendMessage): <what to include: branches and heads,
-the merge or commit SHA behind every claim, tests and counts, findings and fixes, the
-report path, what still needs the operator>; ending with
+When done, send <supervisor-name> (SendMessage) a report of at most about 25 lines: <what
+to include: branches and heads, the merge or commit SHA behind every claim, tests and
+counts, findings and fixes, the report path, what still needs the operator>. Put the
+detail in the report file whose path you give. End the message with
 Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
 Summary: one or two sentences
 Concerns/Blockers: optional
@@ -57,9 +59,9 @@ Concerns/Blockers: optional
 Dispatch:
 
 ```bash
-herdr pane run <pane> "/<skill> Read the brief at <abs-path> and follow it exactly. You are session <name>; the supervisor session is <supervisor>."
-# a few seconds later (it may still say idle right after the run):
-herdr agent get <pane>
+herdr agent prompt <pane> "/<skill> Read the brief at <abs-path> and follow it exactly. You are session <name>; the supervisor session is <supervisor>." --wait --until working --until blocked --timeout 15000
+# exit 0 with "agent_status":"working" means it started; on an error do not resend,
+# follow "Dispatch did not start" in monitoring-and-operator-gate.md
 ```
 
 ## Real briefs this template was checked against

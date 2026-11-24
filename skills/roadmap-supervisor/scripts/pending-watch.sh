@@ -4,12 +4,14 @@
 #   pending-watch.sh init   <dir> --session <name> [--project <name>] [--tab <id>] [--pane <id>]
 #   pending-watch.sh close  <dir>   # stop the watcher, move the ledger back into <dir>
 #   pending-watch.sh watch  <dir> [--tab <tab-id>] [--base-label <label>]
-#   pending-watch.sh synced <dir>   # run in the same Bash call as every supervisor write;
-#                                   # lists answers in the file that are not recorded yet
+#   pending-watch.sh synced <dir>   # accept the file as is: after a hand-written Conflict: line
+#                                   # (same Bash call) and before restarting watch after a
+#                                   # user-edit exit; lists answers in the file not recorded yet
 #   pending-watch.sh answers <dir>  # full block of every OPEN item that has an answer
 #   pending-watch.sh list   <dir>   # one line per OPEN item: D<n> · scope · unseen|seen|answered · question
 #   pending-watch.sh line   <dir>   # one-line footer while items wait; nothing when none do
-#   pending-watch.sh add    <dir>   # item body on stdin (scope line first); prints the new D<n>
+#   pending-watch.sh add    <dir> [--file <path>]  # item body from the file, or from stdin
+#                                   # (scope line first); prints the new D<n>
 #   pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]  # stamp the answer, archive the item
 #   pending-watch.sh seen   <dir> D<n>  # set Seen: [x]
 #   pending-watch.sh stop   <dir>   # stop a running watcher and restore the tab label
@@ -17,7 +19,9 @@
 # watch: badges the Herdr tab "<base> ⏳N" (N = open, unseen items), notifies each new item
 #   once and again every PENDING_RENOTIFY_SECONDS (default 1800), polls every
 #   PENDING_POLL_SECONDS (default 5), and exits 0 with "pending-watch: user-edit" when the
-#   ledger changes without a matching `synced` and stays unchanged for one more poll.
+#   ledger changes without a matching `synced` and stays unchanged for one more poll. After
+#   that first line it prints the steps that must follow, with the real paths: answers,
+#   record each answer, synced, then watch again in the background.
 #   Run it with run_in_background so its exit wakes the supervisor.
 #   --tab defaults to the tab of `herdr pane current`; --base-label overrides the label read
 #   with `herdr tab get`.
@@ -33,7 +37,9 @@
 #   nothing and exits 3. Each stores the new hash (like synced), names any other answer still
 #   waiting in the file, and exits 1 for an unknown or non-OPEN D<n>.
 #   add numbers the item after the highest D<n> in the ledger and the archive, so a number is
-#   never reused. record appends the answered item to <dir>/pending-decisions.archive.md (once
+#   never reused. When no watcher is running for <dir>, add also warns on stderr and prints
+#   the command that starts one; stdout stays the new D<n> and the exit code is unchanged.
+#   record appends the answered item to <dir>/pending-decisions.archive.md (once
 #   per D<n>) and then removes it from the ledger; for "file" the answer is the text already
 #   in the item, for "dialog" and "chat" the text argument is required.
 #
@@ -53,7 +59,8 @@
 set -euo pipefail
 
 die() { echo "pending-watch: $*" >&2; exit 1; }
-usage() { sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; }
+# The usage text is the comment block at the top of this file, up to the first code line.
+usage() { awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; }
 
 notifier_warned=""
 TEMPS=()
@@ -73,6 +80,10 @@ OLD_LEDGER="$DIR/pending-decisions.md"
 if [ -s "$DIR/ledger.path" ]; then LEDGER="$(head -n 1 "$DIR/ledger.path")"; else LEDGER="$OLD_LEDGER"; fi
 ARCHIVE="$DIR/pending-decisions.archive.md"
 STATE="$DIR/.pending-state"
+SELF="$(cd "$(dirname "$0")" && pwd -P)/${0##*/}"
+
+# run_line <subcommand>: the exact shell command that runs this script's <subcommand> on <dir>.
+run_line() { printf '%q %s %q' "$SELF" "$1" "$DIR"; }
 
 # An editor may rename the file away for a moment while saving; read that as "missing".
 ledger_hash() {
@@ -299,7 +310,13 @@ require_open() {
 
 cmd_add() {
   local body scope rest id new
-  body="$(cat)"
+  if [ "${1:-}" = --file ]; then
+    [ "$#" -eq 2 ] && [ -f "$2" ] || die "usage: add <dir> --file <path>"
+    body="$(cat "$2")"
+  else
+    [ "$#" -eq 0 ] || die "usage: add <dir> [--file <path>]"
+    body="$(cat)"
+  fi
   scope="$(printf '%s\n' "$body" | head -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   rest="$(printf '%s\n' "$body" | tail -n +2)"
   [ -n "$scope" ] || die "add: the first stdin line must be the scope"
@@ -319,6 +336,9 @@ cmd_add() {
   swap_ledger "$new"
   echo "$id"
   report_waiting
+  # Without a watcher the item gets no tab badge or notification, and an answer saved in the
+  # file wakes nobody.
+  pid_alive || echo "pending-watch: no watcher is running, so $id gets no badge or notification and a file answer will not wake you; start it with run_in_background: $(run_line watch)" >&2
 }
 
 # rewrite_item <D<n>> <awk program>: run the program over the snapshot with id set, into a
@@ -654,6 +674,11 @@ cmd_watch() {
     if [ "$h" != "$(cat "$STATE/hash" 2>/dev/null)" ]; then
       if [ -n "$candidate" ] && [ "$h" = "$candidate" ]; then
         echo "pending-watch: user-edit"
+        printf '%s\n' "pending-watch: next, in order:" \
+          "  1. $(run_line answers)" \
+          "  2. $(run_line record) D<n> file   # once for each item answers printed" \
+          "  3. $(run_line synced)" \
+          "  4. $(run_line watch)   # with run_in_background"
         exit 0
       fi
       candidate="$h"
@@ -705,7 +730,7 @@ case "$cmd" in
   synced) cmd_synced ;;
   answers) cmd_answers ;;
   list) cmd_list ;;
-  add) cmd_add ;;
+  add) cmd_add "$@" ;;
   record) cmd_record "$@" ;;
   seen) cmd_seen "$@" ;;
   init) cmd_init "$@" ;;
