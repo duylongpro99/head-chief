@@ -203,14 +203,17 @@ skills/
     evals/                 # Skill evaluation cases
   roadmap-supervisor/
     SKILL.md               # Supervisor flow: shape, start, briefs, monitoring, operator gate, cleanup
-    references/            # brief-template, role-skill-map, monitoring-and-operator-gate, pending-decisions-format
-    scripts/               # pending-watch.sh (no-model ledger watcher and writer) and its tests
+    references/            # start, brief-template, role-skill-map, monitoring-and-operator-gate, pending-decisions-format
+    scripts/               # pending-watch.sh (no-model ledger watcher and writer), supervisor-check.sh
+                           # (setup, resume, accept/confirm gate), resume-rules.txt, and their tests
   ak-proposal-review/      # Standalone: local HTML proposal review
   ui-paper-pencil-design/  # Standalone: paper-and-pencil page style
   mac-app-leftovers/       # Standalone: find and clean leftovers of uninstalled macOS apps (also a uv script)
   mac-cleanup/             # Standalone: disk-usage report and safe cleanup (also a bash script)
 assets/                    # README intro video (MP4 + GIF preview)
 video/                     # Remotion source of the intro video
+tests/                     # install.sh test; roadmap-supervisor-evals/ (behaviour scenarios, run against a model)
+docs/                      # Maintainer notes: pending-watch internals, roadmap-supervisor lessons register
 install.sh                 # Symlink skills from this checkout into a host's skill folder
 ```
 
@@ -224,8 +227,12 @@ python3 scripts/quick_validate.py        # structural validation (ownership, res
 
 ```bash
 bash skills/roadmap-supervisor/scripts/tests/test-pending-watch.sh   # ledger watcher, stubbed herdr and terminal-notifier
+bash skills/roadmap-supervisor/scripts/tests/test-supervisor-check.sh # resume and the accept/confirm gate, on a temp git repo
+bash skills/roadmap-supervisor/scripts/tests/test-skill-limits.sh    # SKILL.md size, resume rules, lessons register
 bash tests/test-install.sh                                           # install.sh links and ~/supervisor grants, in a temp HOME
 ```
+
+`tests/roadmap-supervisor-evals/run.sh all --model opus --model sonnet` replays past supervisor mistakes against a real model and grades what it leaves on disk. Each run starts a headless `claude -p` and spends tokens, so run it by hand after changing the skill; `docs/roadmap-supervisor-lessons.md` says where a new rule goes.
 
 To try a skill from this checkout without publishing, link it into a host's skill folder:
 
