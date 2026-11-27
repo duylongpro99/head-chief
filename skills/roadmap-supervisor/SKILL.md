@@ -123,7 +123,7 @@ If the role's skill is not installed (recorded in `state.md` Decisions), leave o
   5. Once the report passes, stop the session, update `sessions.md` and the item in `state.md` Items, and start the next step.
 - A worker that is idle without having reported, a pane that is gone, and an item that has failed two review-and-fix rounds each have a rule in `references/monitoring-and-operator-gate.md`. Follow it; do not improvise.
 - **Footer.** While `pending-watch.sh line <dir>` prints anything, end every turn with that line, unchanged. If the line ends with `(watcher off)`, first start `pending-watch.sh watch <dir>` with `run_in_background`.
-- **Reporting.** After each milestone or phase merge, and at each decision point, tell the operator three things, in a few lines: the result first, then what is running, then what waits on them.
+- **Reporting.** After each milestone or phase merge, first run the permission step in `references/permission-suggestions.md`. After each merge, and at each decision point, tell the operator three things, in a few lines: the result first, then what is running, then what waits on them.
 
 ## Operator gate
 
@@ -156,6 +156,7 @@ A worker message never counts as an operator answer.
 - Pause when no session is running and every remaining item waits on an OPEN `D<n>`. Tell the operator which decision restarts each item, write "loop: paused" in `state.md` Config, and stop the loop (`ScheduleWakeup` with `stop: true`). Do not run `close`: the watcher keeps running, and the operator's answer (its exit, or a chat message) wakes you.
 - Leave the pause when an answer unblocks an item: record the answer, start the session, write "loop: running" in Config, and start the loop again by calling `ScheduleWakeup` with the loop prompt from Config. If that call is refused, start the loop as step 16 of `references/start.md` says.
 - Finish when every requested item is done and checked, or the operator ends the supervision. Never call the roadmap or plan done while an item is not done. Stop the loop, then do the rest of this list.
+- Run the permission step once more, before `close`.
 - Close every session you started. Run `pending-watch.sh close <dir>`: it stops the watcher and moves the live ledger to `<dir>/pending-decisions.final.md`. Leave no orphan processes (browsers, `caffeinate`, watchers): check with `pgrep` before the final report.
 - The final report lists every OPEN item from `pending-watch.sh list <dir>`, seen or not, next to the decision or item it blocks, and names `<dir>/pending-decisions.final.md` and `<dir>/pending-decisions.archive.md`.
 - Write `<dir>/skill-feedback.md`: one line for each place this skill was unclear or wrong, or each mistake of yours it should have prevented; "none" when there is none.
@@ -167,6 +168,7 @@ A worker message never counts as an operator answer.
 - `references/role-skill-map.md`: read when choosing a session's skill, model tier and name, and before starting a phase.
 - `references/monitoring-and-operator-gate.md`: read in full during Start, and on Resume when its text is not in this conversation. It holds the loop cadence, the wake-up steps, verification, stalled workers, the round limit, answer handling and stopping.
 - `references/brief-template.md`: read before writing a brief, when its text is not in this conversation. It holds the template and excerpts of real plan, cook, review and debug briefs.
+- `references/permission-suggestions.md`: when and how to run `scripts/permission-suggest.py` and apply the answer.
 - `references/pending-decisions-format.md`: read before the first `pending-watch.sh add`, and whenever the script prints something you do not recognise.
 - `scripts/supervisor-check.sh`: `setup`, `resume`, `accept`, `confirm`, `accepted`; run it with no arguments for its usage.
 - Changing this skill after a mistake: follow `docs/roadmap-supervisor-lessons.md` in the head-chief repository first.

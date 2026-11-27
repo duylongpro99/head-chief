@@ -27,7 +27,7 @@ Use the first layer that can hold it.
 2. Place the rule by the list above.
 3. Add a row below. `Proof` names a test (`test:<words from the test's name>`) or a scenario
    (`eval:<scenario folder>`); `scripts/tests/test-skill-limits.sh` fails when one is missing.
-4. Run the three scripts in `skills/roadmap-supervisor/scripts/tests/`. For a layer 5
+4. Run every script in `skills/roadmap-supervisor/scripts/tests/`. For a layer 5
    lesson, also run `tests/roadmap-supervisor-evals/run.sh <scenario> --model opus --model sonnet`.
 
 ## Register
