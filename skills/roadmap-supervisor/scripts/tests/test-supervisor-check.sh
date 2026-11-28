@@ -245,13 +245,16 @@ else fail "resume lists the operator actions still open" "$OUT"; fi
 
 total=$((total + 1)); T="$ROOT/scan2.txt"; long="$(printf 'b%.0s' {1..24})"; slashed="ab/cd$FAKE_PW"
 { echo "redis://:$FAKE_PW@host:6379"; echo "postgres://app:$slashed@db/x"; echo "postgres://postgres:postgres@localhost:5432/dev"
-  echo "http://localhost:3000?next=a@b"; echo "name task-sk-$long"; echo "key sk-$long"; echo "https://example.com/a:b@c"; } > "$T"
+  echo "http://localhost:3000?next=a@b"; echo "name task-sk-$long"; echo "key sk-$long"; echo "https://example.com/a:b@c"
+  printf '{"api":"http://api:8080/v1","db":"postgres://app:%s@db.example.com/x"}\n' "$FAKE_PW"
+  echo "http://api:8080/v1,http://localhost:3000?next=a@b"; } > "$T"
 got="$("$SCAN" "$T")"; rc=$?
 want="$T:1: password in URL
 $T:2: password in URL
-$T:6: sk- API key"
-if [ "$rc" -eq 1 ] && [ "$got" = "$want" ]; then ok "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names"
-else fail "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names" "rc=$rc got=$got"; fi
+$T:6: sk- API key
+$T:8: password in URL"
+if [ "$rc" -eq 1 ] && [ "$got" = "$want" ]; then ok "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names, also after a host:port URL on the same line"
+else fail "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names, also after a host:port URL on the same line" "rc=$rc got=$got"; fi
 
 total=$((total + 1))
 got="$(printf 'diff --git a/x b/x\n--- a/x\n+++ b/src/x.py\n@@ -1,2 +1,4 @@\n a\n+++ %s\n+u = "redis://:%s@h"\n b\n' "$FAKE_PW" "$FAKE_PW" | "$SCAN" --diff)"

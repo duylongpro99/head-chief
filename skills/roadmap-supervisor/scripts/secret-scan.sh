@@ -45,8 +45,10 @@ scan_records() {
       for (i = 1; i <= NK; i++) if (t ~ K[i]) hit(N[i])
       # scheme://[user]:password@host. The password runs to the last "@" of the token.
       s = t
+      # A skipped match may have swallowed a later URL ("http://api:8080/v1","db":"pg://u:<password>@h"),
+      # so scanning resumes right after the "://" of this match, not after the whole match.
       while (match(s, /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\/ \t:@]*:[^ \t]+@/)) {
-        u = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+        u = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + index(u, "://") + 2)
         p = u; sub(/^[^:]*:\/\/[^:]*:/, "", p); sub(/@$/, "", p)
         lp = tolower(p)
         if (lp ~ /^(%[a-z]|<[^>]*>|\$\{?[a-z_][a-z0-9_]*\}?|\*+|x+|\[redacted\])$/) continue
