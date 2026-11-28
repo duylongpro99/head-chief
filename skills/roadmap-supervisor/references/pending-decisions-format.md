@@ -70,7 +70,13 @@ $W line    <dir>              # footer; end every turn with it while it prints a
 $W synced  <dir>              # after a Conflict: line; before restarting watch after user-edit
 $W close   <dir>              # stops the watcher, moves the ledger to pending-decisions.final.md
 $W stop    <dir>              # stops the watcher, restores the tab label
+$W action-add  <dir> --file <dir>/actions/<topic>.txt  # prints A<n>; see "Operator actions"
+$W action-done <dir> A1 '<the operator's words>'       #   in monitoring-and-operator-gate.md
+$W action-list <dir>          # A<n> · <title> for each OPEN action
 ```
+
+`add` and `action-add` refuse a body in which `secret-scan.sh` finds a likely secret, naming
+the line and kind only. Rewrite the item to name the Keychain item or variable instead.
 
 ## What to do next
 

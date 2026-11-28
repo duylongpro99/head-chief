@@ -4,3 +4,4 @@ When accept prints EVIDENCE lines, compare each one with what the report claims 
 Read a config value from the real file on main now. A value in state.md, a brief or an earlier summary may be stale.
 Write each operator question to a file with the Write tool and add it with `pending-watch.sh add <dir> --file <path>`.
 Dispatch with `herdr agent prompt ... --wait --until working`. On an error, read the pane before you send anything again.
+Never print a secret: read it only into a variable inside the command that uses it, pass it by stdin or a 0600 temp file, and report only success or failure.

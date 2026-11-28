@@ -153,6 +153,29 @@ again. A brought-back `dialog` or `chat` item has an empty `Answer:`, so the ope
 again; record the answer from the archive with the same channel and text. Re-add any item that
 disappeared, with `add`.
 
+## Operator actions
+
+`<supervisor-dir>/operator-actions.md` lists steps only the operator can run. It is not part
+of the ledger: the watcher does not watch it, and the operator never edits it (they reply in
+chat). `action-add` and `action-done` are its only writers; each writes a temp file in the
+folder and renames it over the old one.
+
+- Header: `## A<n> · OPEN|DONE · YYYY-MM-DD HH:MM · <title>`. The body is the supervisor's
+  file after its title line, then `Reply: A<n> done (or say what failed)`. `action-done`
+  changes OPEN to DONE and appends `Done: <time> <the operator's words>` to the block.
+- Numbers come from the highest `A<n>` in the file, which keeps DONE entries, so a number is
+  never reused.
+- `line` prints `🛠 N việc bạn cần tự làm (A1, …) → <file>` first, then ` · ` and the
+  decisions part, so a line with decisions still ends with `(watcher off)` when no watcher
+  runs.
+
+## Secret check
+
+`add` and `action-add` pass the body through `secret-scan.sh` and exit 1 on a hit, naming the
+line and kind only. The scanner looks for shaped values (private-key headers, AWS, GitHub,
+Slack, `sk-`, Google and Supabase keys, JWTs, `scheme://user:password@`), and skips
+placeholder passwords in URLs. It cannot recognise a bare password.
+
 ## Watcher
 
 `watch` polls every `PENDING_POLL_SECONDS` (default 5). When the ledger hash differs from the

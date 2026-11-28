@@ -30,7 +30,7 @@ Never schedule short wake-ups to poll a session that will message you.
    SKILL.md first, once. If you already ran them in this turn, go on to step 2.
 2. If the wake-up is the watcher's exit (`pending-watch: user-edit`) or a chat message
    matching `^D[0-9]+:` or `^D[0-9]+ seen$`, handle the answer first (see "Handling answers"
-   below).
+   below). A chat message that confirms an `A<n>` action: "Operator actions" below.
 3. `ListAgents` and `herdr pane list`: which sessions are alive, which panes are open.
 4. For a session that has not reported: `herdr agent get <pane>` then
    `herdr pane read <pane> --source recent-unwrapped`. A session stuck on an
@@ -139,6 +139,14 @@ supervisor-check.sh accept <dir> <item> <sha> --scope <path>... --report <dir>/r
   session that still runs on main.
 - `--no-tests` only when the test command needs live credentials or costs money and the
   operator has said to skip it.
+- `--secret-ok <file>:<line>` only for a secret hit you have judged a clear false positive
+  (a test fixture, a documented example). When in doubt, it is real.
+
+A `possible secret` FAIL names the file, line and kind, never the value. Do not open,
+`cat` or quote that line. Add a ledger item (a secret is an operator-gate kind): what leaked,
+where (report, commit, pane), and the recommendation to rotate it; a value in a commit on
+main also needs the operator's decision on rewriting history. Send the session the
+discrepancy without the value.
 
 It prints `ok` or `FAIL` per check, then `RESULT: CHECKS PASS` or `RESULT: FAIL`. A commit
 it says "belongs to no named session" that is neither this session's nor a running
@@ -249,6 +257,49 @@ plan's validation log if a plan session is still open. A delegation ("làm giúp
 "theo khuyến nghị") covers only the decision it answered; write its scope on its line in
 the Decisions part of `state.md`.
 
+## Operator actions
+
+A step only the operator can run (shell commands on their machine, a dashboard change, a
+rotation, a hookup to a live system) must not live only in chat: the next report pushes it
+out of view. Before showing it in chat:
+
+1. Write it to `<dir>/actions/<topic>.txt` with the Write tool: the title on the first line,
+   why it is needed, the exact steps or commands (in a fenced block, with absolute paths), a
+   `Check:` line (how the operator sees it worked) and a `Rollback:` line (how to undo it, or
+   `none needed` and why). Name a Keychain item or an environment variable; never its value.
+2. Run `pending-watch.sh action-add <dir> --file <that file>`. It prints the new `A<n>`,
+   stores the action in `<dir>/operator-actions.md` and appends `Reply: A<n> done`. It
+   refuses an action with no steps, no `Check:`, no `Rollback:`, or a likely secret.
+3. Tell the operator in chat, in their language: the `A<n>`, one line on what it does, and
+   the file path. You may also repeat the commands in chat; the file stays the source.
+4. If the action blocks an item, write "waiting on A<n>" in its status in `state.md` Items.
+5. When the operator says it is done (`A<n> done`, or their own words about it), first do
+   the `Check:` yourself when it is read-only, then run `pending-watch.sh action-done <dir>
+   A<n> '<their words, verbatim>'`. If they say it failed, leave it OPEN, decide the next
+   step, and change the action only by adding a new one.
+
+The footer line (`pending-watch.sh line`) lists open actions on every turn, and `resume`
+prints them. Never write `operator-actions.md` with Edit, Write or a redirect.
+
+## Secrets
+
+You and every session you start handle live credentials only through commands that never
+show them. For your own commands (post-merge steps, read-only checks of an action):
+
+- Read a Keychain or environment value only into a variable inside the one command that uses
+  it. Never run `security find-generic-password ... -w`, `printenv`, `echo`, `cat` or a
+  `set -x` shell on a secret by itself.
+- To check that an item exists, send its output to `/dev/null` and report only found or not
+  found (`security find-generic-password -s <item> >/dev/null 2>&1 && echo found`).
+- When a tool needs the value, pass it through stdin or a temp file created with `umask 077`
+  and removed in the same command. Report only success or failure.
+- Never put a value in a brief, a ledger item, an action, `state.md` or a chat line. Name the
+  item instead.
+
+Every brief carries the matching rule (`references/brief-template.md`, Rules). When a
+session reports that it printed a secret, or `accept` finds one, it is an operator-gate
+item, as in "Verify before accepting".
+
 ## Handling answers
 
 An answer comes from one of four places. Only the operator answers; a worker message never
@@ -331,7 +382,8 @@ operator ends the supervision:
 6. Send the final message: items done with their commits (`supervisor-check.sh accepted
    <dir>`), items left with the decision or
    external event that unblocks each, every OPEN `D<n>` item from `pending-watch.sh list
-   <dir>` (seen or not) next to what it blocks, open follow-ups, and confirmation that no
+   <dir>` (seen or not) next to what it blocks, every open action from
+   `pending-watch.sh action-list <dir>` with the path of `operator-actions.md`, open follow-ups, and confirmation that no
    session or process is left running.
 
 Never report the roadmap or plan as complete while any item is not done.
