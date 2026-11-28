@@ -267,6 +267,7 @@ out of view. Before showing it in chat:
    why it is needed, the exact steps or commands (in a fenced block, with absolute paths), a
    `Check:` line (how the operator sees it worked) and a `Rollback:` line (how to undo it, or
    `none needed` and why). Name a Keychain item or an environment variable; never its value.
+   No line may start with `## `; use a numbered list or `### ` for steps.
 2. Run `pending-watch.sh action-add <dir> --file <that file>`. It prints the new `A<n>`,
    stores the action in `<dir>/operator-actions.md` and appends `Reply: A<n> done`. It
    refuses an action with no steps, no `Check:`, no `Rollback:`, or a likely secret.
@@ -275,7 +276,7 @@ out of view. Before showing it in chat:
 4. If the action blocks an item, write "waiting on A<n>" in its status in `state.md` Items.
 5. When the operator says it is done (`A<n> done`, or their own words about it), first do
    the `Check:` yourself when it is read-only, then run `pending-watch.sh action-done <dir>
-   A<n> '<their words, verbatim>'`. If they say it failed, leave it OPEN, decide the next
+   A<n> '<their words, verbatim>'` on one line (join lines with ` / `). If they say it failed, leave it OPEN, decide the next
    step, and change the action only by adding a new one.
 
 The footer line (`pending-watch.sh line`) lists open actions on every turn, and `resume`

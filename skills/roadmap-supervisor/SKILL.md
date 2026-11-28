@@ -39,8 +39,8 @@ The loop prompt names the supervisor folder. Without a loop prompt, look for
 one matches. When `<dir>/state.md` exists, never run Start again. Rebuild state instead:
 
 1. Read `<dir>/state.md` and `<dir>/sessions.md`.
-2. Run `supervisor-check.sh resume <dir>`. It prints the main head, the sessions still running, the open items, the watcher state and the accepted items. Then do every line under "DO now", in order, and keep to the rules it prints at the end. Do not Read the whole ledger.
-3. If the text of `references/monitoring-and-operator-gate.md` is not in this conversation (you have not Read it since the last compaction or restart), read it in full. The same test applies to `references/brief-template.md` before you write a brief, and to `references/pending-decisions-format.md` before you act on a `pending-watch.sh` message or result you do not recognise.
+2. Run `supervisor-check.sh resume <dir>`. Do every line under "DO now", in order, and keep to the rules it prints at the end. Do not Read the whole ledger.
+3. If the text of `references/monitoring-and-operator-gate.md` is not in this conversation (not Read since the last compaction or restart), read it in full. The same goes for `references/brief-template.md` before a brief, and `references/pending-decisions-format.md` before acting on `pending-watch.sh` output you do not recognise.
 4. If Config in `state.md` still has a `TBD` value, do the steps of `references/start.md` that settle it (14 to 17). This finishes Start; it does not run it again. Open no session while a worker model or the parallel cap is `TBD`.
 5. Continue with "On each wake-up or message" in the reference. If Config says "loop: paused" and no new answer unblocks an item, schedule no wake-up and end the turn.
 
@@ -108,7 +108,7 @@ Start the session with `create-session.sh --p-name <name> --s-name <name> --mode
 herdr agent prompt <pane-id> "/<skill> Read the brief at <abs-path> and follow it exactly. You are session <name>; the supervisor session is <supervisor>." --wait --until working --until blocked --timeout 15000
 ```
 
-Run it only when `herdr agent get <pane-id>` says `idle`. Exit 0 with `"agent_status":"working"` means the session started on the brief; `"blocked"` means it stopped at a prompt (step 4 of the wake-up list in the reference). On any error (`agent_prompt_stalled`, `agent_blocked`, `timeout`), do not send it again; follow "Dispatch did not start" in the reference.
+Run it only when `herdr agent get <pane-id>` says `idle`. `"agent_status":"working"` means it started; `"blocked"` means it stopped at a prompt (wake-up step 4 in the reference). On any error, do not send it again; follow "Dispatch did not start" in the reference.
 
 If the role's skill is not installed (recorded in `state.md` Decisions), leave out `/<skill> ` and send the rest of the line.
 

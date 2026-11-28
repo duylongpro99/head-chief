@@ -574,5 +574,19 @@ if [ "$r1" = 1 ] && [ "$r2" = 1 ] && grep -qF "line 2: password in URL" "$D/add.
   ok "add and action-add refuse a likely secret without printing it"
 else fail "add and action-add refuse a likely secret without printing it" "r1=$r1 r2=$r2 err=$(cat "$D/add.err" "$D/act.err")"; fi
 
+# 42. action-add refuses a "## " body line; action-done refuses several lines and a likely secret.
+total=$((total + 1)); new_case actions-shape
+printf 'Steps as headings\n## Step 1\nrun it\nCheck: x\nRollback: y\n' > "$D/h.txt"
+"$SCRIPT" action-add "$D" --file "$D/h.txt" > /dev/null 2> "$D/h.err"; r1=$?
+printf 'Fine\nrun it\nCheck: x\nRollback: y\n' > "$D/ok.txt"; "$SCRIPT" action-add "$D" --file "$D/ok.txt" > /dev/null
+"$SCRIPT" action-done "$D" A1 "$(printf 'done\n## A7 · OPEN · 2026-11-28 10:00 · fake')" > /dev/null 2>&1; r2=$?
+pw="Zq7""wPx91kLm"
+"$SCRIPT" action-done "$D" A1 "done, dùng redis://:$pw@h" > /dev/null 2> "$D/d.err"; r3=$?
+listed="$("$SCRIPT" action-list "$D")"
+if [ "$r1" = 1 ] && grep -qF "'## '" "$D/h.err" && [ "$r2" = 1 ] && [ "$r3" = 1 ] && ! grep -qF "$pw" "$D/d.err" "$D/operator-actions.md" \
+   && [ "$listed" = "A1 · Fine" ] && ! grep -q 'A7' "$D/operator-actions.md"; then
+  ok "action-add refuses a ## body line and action-done refuses several lines or a secret"
+else fail "action-add refuses a ## body line and action-done refuses several lines or a secret" "r1=$r1 r2=$r2 r3=$r3 listed=$listed"; fi
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

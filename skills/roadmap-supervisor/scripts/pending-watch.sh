@@ -51,8 +51,9 @@
 # Actions: <dir>/operator-actions.md holds the steps the operator must run by hand, so they do
 #   not scroll away in chat. action-add takes a file whose first line is the title, followed
 #   by the steps or commands, a "Check:" line and a "Rollback:" line; it appends
-#   "Reply: A<n> done". action-done marks the action DONE with the time and the operator's
-#   words. line lists OPEN actions before the decisions, and prints them even when no
+#   "Reply: A<n> done"; it refuses a body line that starts with "## ". action-done marks the
+#   action DONE with the time and the operator's words, which must be one line and hold no
+#   likely secret. line lists OPEN actions before the decisions, and prints them even when no
 #   decision waits.
 #
 # Ledger: the path in <dir>/ledger.path when that file exists, else <dir>/pending-decisions.md.
@@ -348,6 +349,8 @@ cmd_action_add() {
   printf '%s\n' "$rest" | grep -q '^Check:' || die "action-add: add a 'Check:' line: how the operator sees that it worked"
   printf '%s\n' "$rest" | grep -q '^Rollback:' || die "action-add: add a 'Rollback:' line: how to undo it, or 'none needed' and why"
   [ -n "$(printf '%s\n' "$rest" | grep -v -e '^Check:' -e '^Rollback:' | tr -d '[:space:]')" ] || die "action-add: no steps or commands between the title and Check:"
+  # A "## " line would read as the start of another action and split this one.
+  ! printf '%s\n' "$rest" | grep -q '^## ' || die "action-add: no line may start with '## '; use '### ' or a numbered list for steps"
   refuse_secrets "$2" "action-add"
   n="$(action_records | awk -F'\t' '{ v = substr($1, 2) + 0; if (v > m) m = v } END { print m + 0 }')"
   id="A$((n + 1))"
@@ -368,6 +371,12 @@ cmd_action_done() {
   [ "$#" -eq 2 ] && [ -n "$(printf '%s' "$2" | tr -d '[:space:]')" ] || die "usage: action-done <dir> A<n> '<the operator's words>'"
   local id="$1" st new
   case "$id" in A[0-9]*) ;; *) die "not an action id: $id (expected A<n>)" ;; esac
+  # One line only: a second line could start a fake "## A<n>" header.
+  case "$2" in *$'\n'*|*$'\r'*) die "action-done: the operator's words must be one line; join the lines with ' / '" ;; esac
+  local said
+  said="$(mktemp "${TMPDIR:-/tmp}/pending-done.XXXXXX")"; TEMPS+=("$said"); trap cleanup_temps EXIT
+  printf '%s\n' "$2" > "$said"
+  refuse_secrets "$said" "action-done"
   st="$(action_records | awk -F'\t' -v id="$id" '$1 == id { print $2 }')"
   [ -n "$st" ] || die "no action $id in $ACTIONS"
   [ "$st" = OPEN ] || die "$id is already $st"
