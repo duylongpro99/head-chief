@@ -38,6 +38,12 @@ Rules
   locally; mark the roadmap row or the phase status in plan.md done; remove the worktree
   and branch.>
 - No GitHub unless stated. Stop every process you start (<pgrep check>).
+- Never print a secret. Read a Keychain or env value only into a variable inside the command
+  that uses it; never run `security ... -w`, `printenv`, `echo` or `cat` on a secret alone,
+  and never `set -x`. Check that an item exists with its output sent to `/dev/null`. Pass a
+  value to a tool through stdin or a `umask 077` temp file removed in the same command. No
+  value in a commit, report or message. If one was printed anyway, say in your report where
+  and which item (never the value), so the operator can rotate it.
 - Do not wait on interactive questions. Send them to <supervisor-name> with SendMessage,
   with your recommendation, and keep working on anything not blocked.
 - Do not write, create or delete anything under <supervisor-dir> (the whole supervisor

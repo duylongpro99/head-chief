@@ -153,6 +153,36 @@ again. A brought-back `dialog` or `chat` item has an empty `Answer:`, so the ope
 again; record the answer from the archive with the same channel and text. Re-add any item that
 disappeared, with `add`.
 
+## Operator actions
+
+`<supervisor-dir>/operator-actions.md` lists steps only the operator can run. It is not part
+of the ledger: the watcher does not watch it, and the operator never edits it (they reply in
+chat). `action-add` and `action-done` are its only writers; each writes a temp file in the
+folder and renames it over the old one.
+
+- Header: `## A<n> · OPEN|DONE · YYYY-MM-DD HH:MM · <title>`. The body is the supervisor's
+  file after its title line, then `Reply: A<n> done (or say what failed)`. `action-done`
+  changes OPEN to DONE and appends `Done: <time> <the operator's words>` to the block.
+- A body line starting with `## ` would read as a new header and split the action, so
+  `action-add` refuses one. For the same reason `action-done` takes the operator's words on
+  one line only, and runs the secret check on them.
+- Numbers come from the highest `A<n>` in the file, which keeps DONE entries, so a number is
+  never reused.
+- `line` prints `🛠 N việc bạn cần tự làm (A1, …) → <file>` first, then ` · ` and the
+  decisions part, so a line with decisions still ends with `(watcher off)` when no watcher
+  runs.
+
+## Secret check
+
+`add` and `action-add` pass the body through `secret-scan.sh` and exit 1 on a hit, naming the
+line and kind only. The scanner looks for shaped values (private-key headers, AWS, GitHub,
+Slack, `sk-`, Google and Supabase keys, JWTs, `scheme://[user]:password@`), and skips
+placeholder or well-known default passwords in URLs and a `host:port` followed by a query
+holding `@`. It cannot recognise a bare password. It uses no awk `{n}` intervals (older
+`mawk` lacks them): `rep()` builds each repetition as a plain regex string. In `--diff` mode
+the hunk's line counts mark where content ends, so an added line that starts with `++ ` is
+never read as a file header.
+
 ## Watcher
 
 `watch` polls every `PENDING_POLL_SECONDS` (default 5). When the ledger hash differs from the

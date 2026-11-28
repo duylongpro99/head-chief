@@ -15,6 +15,9 @@
 #   pending-watch.sh record <dir> D<n> <dialog|chat|file> [text]  # stamp the answer, archive the item
 #   pending-watch.sh seen   <dir> D<n>  # set Seen: [x]
 #   pending-watch.sh stop   <dir>   # stop a running watcher and restore the tab label
+#   pending-watch.sh action-add  <dir> --file <path>  # a step the operator must run; prints A<n>
+#   pending-watch.sh action-done <dir> A<n> <text>    # the operator's confirmation, verbatim
+#   pending-watch.sh action-list <dir>                # one line per OPEN action: A<n> · title
 #
 # watch: badges the Herdr tab "<base> ⏳N" (N = open, unseen items), notifies each new item
 #   once and again every PENDING_RENOTIFY_SECONDS (default 1800), polls every
@@ -42,6 +45,16 @@
 #   record appends the answered item to <dir>/pending-decisions.archive.md (once
 #   per D<n>) and then removes it from the ledger; for "file" the answer is the text already
 #   in the item, for "dialog" and "chat" the text argument is required.
+#
+# add, action-add: refuse a body in which secret-scan.sh finds a likely secret (exit 1, the
+#   hits named by line and kind, never the value).
+# Actions: <dir>/operator-actions.md holds the steps the operator must run by hand, so they do
+#   not scroll away in chat. action-add takes a file whose first line is the title, followed
+#   by the steps or commands, a "Check:" line and a "Rollback:" line; it appends
+#   "Reply: A<n> done"; it refuses a body line that starts with "## ". action-done marks the
+#   action DONE with the time and the operator's words, which must be one line and hold no
+#   likely secret. line lists OPEN actions before the decisions, and prints them even when no
+#   decision waits.
 #
 # Ledger: the path in <dir>/ledger.path when that file exists, else <dir>/pending-decisions.md.
 # init creates $SUPERVISOR_HOME/<project>--<session>.md (SUPERVISOR_HOME defaults to
@@ -81,6 +94,8 @@ if [ -s "$DIR/ledger.path" ]; then LEDGER="$(head -n 1 "$DIR/ledger.path")"; els
 ARCHIVE="$DIR/pending-decisions.archive.md"
 STATE="$DIR/.pending-state"
 SELF="$(cd "$(dirname "$0")" && pwd -P)/${0##*/}"
+SCAN="${SELF%/*}/secret-scan.sh"
+ACTIONS="$DIR/operator-actions.md"
 
 # run_line <subcommand>: the exact shell command that runs this script's <subcommand> on <dir>.
 run_line() { printf '%q %s %q' "$SELF" "$1" "$DIR"; }
@@ -308,6 +323,86 @@ require_open() {
   [ "$(printf '%s' "$rec" | cut -f2)" = OPEN ] || die "$1 is not OPEN"
 }
 
+# refuse_secrets <file> <what>: exit 1, naming each hit without its value, when the file looks
+# like it holds a secret.
+refuse_secrets() {
+  local hits
+  hits="$("$SCAN" "$1" 2>&1)" && return 0
+  printf '%s\n' "$hits" | sed "s|^$1:|line |" | while IFS= read -r l; do echo "pending-watch: $2 looks like it holds a secret: $l" >&2; done
+  die "$2 refused: name the Keychain item or environment variable instead of its value"
+}
+
+# One record per action in operator-actions.md: id \t status \t title.
+action_records() {
+  [ -f "$ACTIONS" ] || return 0
+  LC_ALL=C awk -F' · ' '{ sub(/\r$/, "") } /^## A[0-9]+ · (OPEN|DONE) · / { t = $0; sub(/^([^·]*· ){3}/, "", t); print substr($1, 4) "\t" $2 "\t" t }' "$ACTIONS"
+}
+
+cmd_action_add() {
+  [ "$#" -eq 2 ] && [ "$1" = --file ] && [ -f "$2" ] || die "usage: action-add <dir> --file <path>"
+  local body title rest n id new
+  body="$(LC_ALL=C sed 's/\r$//' "$2")"
+  title="$(printf '%s\n' "$body" | head -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  rest="$(printf '%s\n' "$body" | tail -n +2)"
+  [ -n "$title" ] || die "action-add: the first line must be the title"
+  case "$title" in *" · "*|"#"*) die "action-add: the title must not contain ' · ' or start with '#'" ;; esac
+  printf '%s\n' "$rest" | grep -q '^Check:' || die "action-add: add a 'Check:' line: how the operator sees that it worked"
+  printf '%s\n' "$rest" | grep -q '^Rollback:' || die "action-add: add a 'Rollback:' line: how to undo it, or 'none needed' and why"
+  [ -n "$(printf '%s\n' "$rest" | grep -v -e '^Check:' -e '^Rollback:' | tr -d '[:space:]')" ] || die "action-add: no steps or commands between the title and Check:"
+  # A "## " line would read as the start of another action and split this one.
+  ! printf '%s\n' "$rest" | grep -q '^## ' || die "action-add: no line may start with '## '; use '### ' or a numbered list for steps"
+  refuse_secrets "$2" "action-add"
+  n="$(action_records | awk -F'\t' '{ v = substr($1, 2) + 0; if (v > m) m = v } END { print m + 0 }')"
+  id="A$((n + 1))"
+  new="$(mktemp "$DIR/.actions-new.XXXXXX")"; TEMPS+=("$new"); trap cleanup_temps EXIT
+  {
+    if [ -f "$ACTIONS" ]; then trim_trailing_blank < "$ACTIONS"
+    else printf '# Operator actions\nSteps only the operator can run. Reply in chat with the Reply: line of each one.\n'; fi
+    echo
+    printf '## %s · OPEN · %s · %s\n' "$id" "$(now_stamp)" "$title"
+    printf '%s\n' "$rest" | trim_trailing_blank | LC_ALL=C awk 'NF { s = 1 } s'
+    printf 'Reply: %s done (or say what failed)\n' "$id"
+  } > "$new"
+  mv "$new" "$ACTIONS"
+  echo "$id"
+}
+
+cmd_action_done() {
+  [ "$#" -eq 2 ] && [ -n "$(printf '%s' "$2" | tr -d '[:space:]')" ] || die "usage: action-done <dir> A<n> '<the operator's words>'"
+  local id="$1" st new
+  case "$id" in A[0-9]*) ;; *) die "not an action id: $id (expected A<n>)" ;; esac
+  # One line only: a second line could start a fake "## A<n>" header.
+  case "$2" in *$'\n'*|*$'\r'*) die "action-done: the operator's words must be one line; join the lines with ' / '" ;; esac
+  local said
+  said="$(mktemp "${TMPDIR:-/tmp}/pending-done.XXXXXX")"; TEMPS+=("$said"); trap cleanup_temps EXIT
+  printf '%s\n' "$2" > "$said"
+  refuse_secrets "$said" "action-done"
+  st="$(action_records | awk -F'\t' -v id="$id" '$1 == id { print $2 }')"
+  [ -n "$st" ] || die "no action $id in $ACTIONS"
+  [ "$st" = OPEN ] || die "$id is already $st"
+  new="$(mktemp "$DIR/.actions-new.XXXXXX")"; TEMPS+=("$new"); trap cleanup_temps EXIT
+  # The answer goes through the environment: awk -v would expand backslashes in it.
+  STAMP="$(now_stamp)" ANS="$2" LC_ALL=C awk -v id="$id" '
+    { sub(/\r$/, "") }
+    function flush(last) {
+      if (on) {
+        while (n > 0 && buf[n] ~ /^[ \t]*$/) n--
+        for (i = 1; i <= n; i++) print buf[i]
+        print "Done: " ENVIRON["STAMP"] " " ENVIRON["ANS"]
+        if (!last) print ""
+      }
+      n = 0; on = 0
+    }
+    /^## / { flush(0); if (index($0, "## " id " · OPEN · ") == 1) { sub(/ · OPEN · /, " · DONE · "); on = 1 } }
+    on { buf[++n] = $0; next }
+    { print }
+    END { flush(1) }' "$ACTIONS" > "$new"
+  mv "$new" "$ACTIONS"
+  echo "$id"
+}
+
+cmd_action_list() { action_records | awk -F'\t' '$2 == "OPEN" { print $1 " · " $3 }'; }
+
 cmd_add() {
   local body scope rest id new
   if [ "${1:-}" = --file ]; then
@@ -317,6 +412,10 @@ cmd_add() {
     [ "$#" -eq 0 ] || die "usage: add <dir> [--file <path>]"
     body="$(cat)"
   fi
+  local scanned
+  scanned="$(mktemp "${TMPDIR:-/tmp}/pending-add.XXXXXX")"; TEMPS+=("$scanned"); trap cleanup_temps EXIT
+  printf '%s\n' "$body" > "$scanned"
+  refuse_secrets "$scanned" "add"
   scope="$(printf '%s\n' "$body" | head -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   rest="$(printf '%s\n' "$body" | tail -n +2)"
   [ -n "$scope" ] || die "add: the first stdin line must be the scope"
@@ -582,17 +681,25 @@ cmd_list() {
 }
 
 cmd_line() {
-  local records ids="" n=0 id
+  local records ids="" n=0 id acts="" na=0 out=""
   records="$(parse_checked)" || exit $?
   while IFS=$'\t' read -r id _; do
     [ -n "$id" ] || continue
     n=$((n + 1))
     if [ -f "$STATE/notified/$id" ]; then ids="$ids${ids:+, }$id"; else ids="$ids${ids:+, }$id mới"; fi
   done < <(printf '%s\n' "$records" | select_counted)
-  [ "$n" -gt 0 ] || return 0
-  local off=""
-  pid_alive || off=" (watcher off)"
-  echo "⏳ $n đang chờ bạn ($ids) → $LEDGER$off"
+  while IFS=$'\t' read -r id _; do
+    [ -n "$id" ] || continue
+    na=$((na + 1)); acts="$acts${acts:+, }$id"
+  done < <(action_records | awk -F'\t' '$2 == "OPEN"')
+  # Actions come first so that a line with decisions still ends with "(watcher off)".
+  [ "$na" -eq 0 ] || out="🛠 $na việc bạn cần tự làm ($acts) → $ACTIONS"
+  if [ "$n" -gt 0 ]; then
+    local off=""
+    pid_alive || off=" (watcher off)"
+    out="$out${out:+ · }⏳ $n đang chờ bạn ($ids) → $LEDGER$off"
+  fi
+  [ -z "$out" ] || echo "$out"
 }
 
 cmd_stop() {
@@ -737,5 +844,8 @@ case "$cmd" in
   close) cmd_close ;;
   line) cmd_line ;;
   stop) cmd_stop ;;
+  action-add) cmd_action_add "$@" ;;
+  action-done) cmd_action_done "$@" ;;
+  action-list) cmd_action_list ;;
   *) usage >&2; exit 2 ;;
 esac

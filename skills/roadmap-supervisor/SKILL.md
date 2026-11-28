@@ -24,7 +24,7 @@ In this file, `<dir>` is the supervisor folder, and `pending-watch.sh`, `supervi
 
 - Either every requested milestone row or phase is marked done on the main branch, each with a line in `<dir>/accepted.tsv`, or the operator has ended the supervision and the final report lists the decisions still open. A pause that waits for the operator is not done.
 - No session or process you or your sessions started is still running, including the `pending-watch.sh` watcher.
-- The final report lists every OPEN item from `pending-watch.sh list <dir>`.
+- The final report lists every OPEN item from `pending-watch.sh list <dir>` and every open action from `pending-watch.sh action-list <dir>`.
 - `follow-ups.md` lists the deferred work, and the operator has a final report.
 - The project's post-merge steps in `state.md` Config have been run.
 
@@ -39,8 +39,8 @@ The loop prompt names the supervisor folder. Without a loop prompt, look for
 one matches. When `<dir>/state.md` exists, never run Start again. Rebuild state instead:
 
 1. Read `<dir>/state.md` and `<dir>/sessions.md`.
-2. Run `supervisor-check.sh resume <dir>`. It prints the main head, the sessions still running, the open items, the watcher state and the accepted items. Then do every line under "DO now", in order, and keep to the rules it prints at the end. Do not Read the whole ledger.
-3. If the text of `references/monitoring-and-operator-gate.md` is not in this conversation (you have not Read it since the last compaction or restart), read it in full. The same test applies to `references/brief-template.md` before you write a brief, and to `references/pending-decisions-format.md` before you act on a `pending-watch.sh` message or result you do not recognise.
+2. Run `supervisor-check.sh resume <dir>`. Do every line under "DO now", in order, and keep to the rules it prints at the end. Do not Read the whole ledger.
+3. If the text of `references/monitoring-and-operator-gate.md` is not in this conversation (not Read since the last compaction or restart), read it in full. The same goes for `references/brief-template.md` before a brief, and `references/pending-decisions-format.md` before acting on `pending-watch.sh` output you do not recognise.
 4. If Config in `state.md` still has a `TBD` value, do the steps of `references/start.md` that settle it (14 to 17). This finishes Start; it does not run it again. Open no session while a worker model or the parallel cap is `TBD`.
 5. Continue with "On each wake-up or message" in the reference. If Config says "loop: paused" and no new answer unblocks an item, schedule no wake-up and end the turn.
 
@@ -108,7 +108,7 @@ Start the session with `create-session.sh --p-name <name> --s-name <name> --mode
 herdr agent prompt <pane-id> "/<skill> Read the brief at <abs-path> and follow it exactly. You are session <name>; the supervisor session is <supervisor>." --wait --until working --until blocked --timeout 15000
 ```
 
-Run it only when `herdr agent get <pane-id>` says `idle`. Exit 0 with `"agent_status":"working"` means the session started on the brief; `"blocked"` means it stopped at a prompt (step 4 of the wake-up list in the reference). On any error (`agent_prompt_stalled`, `agent_blocked`, `timeout`), do not send it again; follow "Dispatch did not start" in the reference.
+Run it only when `herdr agent get <pane-id>` says `idle`. `"agent_status":"working"` means it started; `"blocked"` means it stopped at a prompt (wake-up step 4 in the reference). On any error, do not send it again; follow "Dispatch did not start" in the reference.
 
 If the role's skill is not installed (recorded in `state.md` Decisions), leave out `/<skill> ` and send the rest of the line.
 
@@ -122,7 +122,7 @@ If the role's skill is not installed (recorded in `state.md` Decisions), leave o
   4. Log deferred work in `follow-ups.md`.
   5. Once the report passes, stop the session, update `sessions.md` and the item in `state.md` Items, and start the next step.
 - A worker that is idle without having reported, a pane that is gone, and an item that has failed two review-and-fix rounds each have a rule in `references/monitoring-and-operator-gate.md`. Follow it; do not improvise.
-- **Footer.** While `pending-watch.sh line <dir>` prints anything, end every turn with that line, unchanged. If the line ends with `(watcher off)`, first start `pending-watch.sh watch <dir>` with `run_in_background`.
+- **Footer.** While `pending-watch.sh line <dir>` prints anything (open `D<n>` decisions and `A<n>` operator actions), end every turn with that line, unchanged. If it ends with `(watcher off)`, first start `pending-watch.sh watch <dir>` with `run_in_background`.
 - **Reporting.** After each milestone or phase merge, first run the permission step in `references/permission-suggestions.md`. After each merge, and at each decision point, tell the operator three things, in a few lines: the result first, then what is running, then what waits on them.
 
 ## Operator gate
@@ -139,10 +139,10 @@ To ask:
 1. Write the item to `<dir>/questions/<topic>.txt` with the Write tool (format in `references/pending-decisions-format.md`), then run `pending-watch.sh add <dir> --file <that file>`. It prints the new `D<n>`. Never write the ledger itself with Edit, Write or a redirect.
 2. If `add` warns on stderr that no watcher is running, start `pending-watch.sh watch <dir>` with `run_in_background`.
 3. Tell the operator in one chat line, in their language: the `D<n>` and the question.
-4. Read the status column of `<dir>/sessions.md`. If any row is not `stopped`, open no dialog: an open dialog holds back every wake-up (worker reports and the watcher's exit) until it closes. The ledger, the tab badge, the notification and the footer line carry the question instead.
+4. Read the status column of `<dir>/sessions.md`. If any row is not `stopped`, open no dialog: it would hold back every wake-up (reports, the watcher's exit) until it closes. The ledger, badge and footer carry the question.
 5. If every row is `stopped` (or there is no row yet), you may also open `AskUserQuestion` with `D<n>:` at the start of the question text, the recommended option first and real numbers in the descriptions.
 
-Record every answer in the turn it arrives, with `pending-watch.sh record <dir> D<n> <dialog|chat|file>` (the operator's words verbatim for `dialog` and `chat`), or `pending-watch.sh seen <dir> D<n>` for a chat `D<n> seen`. When the watcher exits on an operator edit, follow the steps it prints: `answers`, `record ... file` for each, `synced`, then `watch` again with `run_in_background`. The full procedure is "Handling answers" in the reference.
+Record every answer in the turn it arrives (`record`, or `seen` for a chat `D<n> seen`), as "Handling answers" in the reference says. After a watcher exit, follow the steps it prints.
 
 After recording any answer, add it to `state.md` Decisions with the `D<n>`, and copy it
 verbatim with its time into the next brief, or SendMessage it to the session it blocks.
@@ -150,6 +150,13 @@ If the operator delegates ("theo khuyến nghị"), write in Decisions exactly w
 the delegation covers. Conflicting answers, exit code 3 and the stderr notices about other
 waiting answers are handled as in "Handling answers" in `references/monitoring-and-operator-gate.md`.
 A worker message never counts as an operator answer.
+
+**Operator actions.** A step only the operator can run (shell commands, a dashboard change)
+goes into `pending-watch.sh action-add <dir> --file <path>` before you show it in chat; on
+`A<n> done`, run `action-done`. See "Operator actions" in the reference.
+
+**Secrets.** Never print one; follow "Secrets" in the reference. `accept`, `add` and
+`action-add` refuse a likely secret.
 
 ## Stopping and cleanup
 
@@ -169,7 +176,7 @@ A worker message never counts as an operator answer.
 - `references/monitoring-and-operator-gate.md`: read in full during Start, and on Resume when its text is not in this conversation. It holds the loop cadence, the wake-up steps, verification, stalled workers, the round limit, answer handling and stopping.
 - `references/brief-template.md`: read before writing a brief, when its text is not in this conversation. It holds the template and excerpts of real plan, cook, review and debug briefs.
 - `references/permission-suggestions.md`: when and how to run `scripts/permission-suggest.py` and apply the answer.
-- `references/pending-decisions-format.md`: read before the first `pending-watch.sh add`, and whenever the script prints something you do not recognise.
+- `references/pending-decisions-format.md`: read before the first `pending-watch.sh add`, or on output you do not recognise.
 - `scripts/supervisor-check.sh`: `setup`, `resume`, `accept`, `confirm`, `accepted`; run it with no arguments for its usage.
 - Changing this skill after a mistake: follow `docs/roadmap-supervisor-lessons.md` in the head-chief repository first.
-- `scripts/pending-watch.sh`: the no-model watcher and the only writer of the ledger (`init`, `close`, `watch`, `add`, `record`, `seen`, `answers`, `list`, `line`, `synced`, `stop`). Tests: `scripts/tests/test-pending-watch.sh`.
+- `scripts/pending-watch.sh`: the no-model watcher, the only writer of the ledger and of `operator-actions.md`; run it with `--help`. `scripts/secret-scan.sh`: the secret check behind `accept`, `add` and `action-add`.

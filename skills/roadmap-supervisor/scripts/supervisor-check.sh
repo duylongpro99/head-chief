@@ -5,7 +5,7 @@
 #   supervisor-check.sh resume <dir>
 #   supervisor-check.sh accept <dir> <item> <sha> [--merge] [--also <sha>]... [--running <sha>]...
 #                              [--scope <path-or-glob>]... [--allow-dirty <path-or-glob>]...
-#                              [--report <file>] [--no-tests]
+#                              [--report <file>] [--no-tests] [--secret-ok <file>:<line>]...
 #   supervisor-check.sh confirm <dir> <item>
 #   supervisor-check.sh accepted <dir>
 #
@@ -27,7 +27,10 @@
 #     --allow-dirty paths (report paths, the write scope of a session still running on main);
 #   - the test command from setup exits 0 (skipped with --no-tests, or when none was set);
 #   - every `path:line` cited in --report exists on main. Those lines are printed as
-#     EVIDENCE for you to compare with the report's claim.
+#     EVIDENCE for you to compare with the report's claim;
+#   - secret-scan.sh finds no likely secret in --report or in the lines this session's
+#     commits added. A hit names the file, line and kind, never the value; --secret-ok skips
+#     one hit you have judged a false positive.
 #   All pass: prints "RESULT: CHECKS PASS", keeps the result as pending, exits 0. The item
 #   is not recorded yet. Any fail: prints each FAIL, keeps nothing, exits 1.
 # confirm: run it after you compared the EVIDENCE lines with the report and did the checks
@@ -44,6 +47,7 @@ usage() { awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0";
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
 PW="$HERE/pending-watch.sh"
+SCAN="$HERE/secret-scan.sh"
 
 [ "$#" -ge 2 ] || { usage; exit 2; }
 cmd="$1"; DIR="$2"; shift 2
@@ -187,6 +191,10 @@ cmd_resume() {
   echo "accepted items (done only when listed here):"
   if [ -s "$DIR/accepted.tsv" ]; then sed 's/^/  /' "$DIR/accepted.tsv"; else echo "  none"; fi
 
+  echo "operator actions still open (in $DIR/operator-actions.md):"
+  out="$("$PW" action-list "$DIR" 2>&1)" || true
+  if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/  /'; else echo "  none"; fi
+
   add_do "Run ListAgents: a session listed there but not in sessions.md is not yours."
   if [ "${PAUSED:-0}" -eq 1 ]; then
     add_do "The loop is paused: if no new answer unblocks an item, schedule no wake-up and end the turn."
@@ -203,7 +211,7 @@ cmd_resume() {
 cmd_accept() {
   [ "$#" -ge 2 ] || die "usage: accept <dir> <item> <sha> [options]"
   local item="$1" sha="$2"; shift 2
-  local merge=0 notests=0 report="" also=() running=() scope=() dirty=() fails=() f c
+  local merge=0 notests=0 report="" also=() running=() scope=() dirty=() secret_ok=() fails=() f c
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --merge) merge=1; shift ;;
@@ -213,6 +221,7 @@ cmd_accept() {
       --scope) scope+=("${2:-}"); shift 2 ;;
       --allow-dirty) dirty+=("${2:-}"); shift 2 ;;
       --report) report="${2:-}"; shift 2 ;;
+      --secret-ok) secret_ok+=("${2:-}"); shift 2 ;;
       *) die "accept: unknown argument $1" ;;
     esac
   done
@@ -351,6 +360,28 @@ cmd_accept() {
       echo "EVIDENCE: the report cites no file:line."
     fi
   fi
+
+  # 7. Secrets in the report and in what this session added to main. Never print the value.
+  local hits="" hit where
+  [ -z "$report" ] || hits="$("$SCAN" "$report" 2>&1)"
+  for c in ${mine[@]+"${mine[@]}"}; do
+    if [ "$(git -C "$REPO" rev-list --parents -n 1 "$c" | wc -w | tr -d ' ')" -ge 3 ]; then
+      hits+=$'\n'"$(git -C "$REPO" diff --no-renames -U0 "$c^1" "$c" | "$SCAN" --diff 2>&1)"
+    else
+      hits+=$'\n'"$(git -C "$REPO" show --no-renames -U0 --format= "$c" | "$SCAN" --diff 2>&1)"
+    fi
+  done
+  local secretbad=0
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    where="${hit%: *}"
+    if [ "${#secret_ok[@]}" -gt 0 ] && printf '%s\n' "${secret_ok[@]}" | grep -qxF -- "$where"; then
+      echo "skip  possible secret at $where (--secret-ok)"; continue
+    fi
+    secretbad=1
+    bad "possible secret ($( printf '%s' "$hit" | sed 's/.*: //')) at $where; the value is not shown. Do not print it. If it may be real, it goes to the operator (rotate it, and whether to remove it from history). Only a clear false positive: run accept again with --secret-ok $where"
+  done < <(printf '%s\n' "$hits" | sort -u)
+  [ "$secretbad" -eq 1 ] || good "no likely secret in the report or in the lines this session added"
 
   if [ "${#fails[@]}" -gt 0 ]; then
     rm -f "$CHECK/pending/$item"

@@ -533,5 +533,60 @@ if wait_for 10 dead "$WPID"; then
   else fail "user-edit exit lists the next steps after its unchanged first line" "rc=$rc out=$(cat "$D/watch.out")"; fi
 else fail "user-edit exit lists the next steps after its unchanged first line" "watcher still running"; stop_watch; fi
 
+# 39. Operator actions: action-add numbers and stores them, line shows them first, action-done closes one.
+total=$((total + 1)); new_case actions
+printf 'Hook Hermes to the mirror\n```bash\nskill-mirror.sh sync\n```\nCheck: hermes lists the skill\nRollback: skill-mirror.sh sync --ref <old>\n' > "$D/a1.txt"
+printf 'Second step\nrun it\nCheck: x\nRollback: none needed\n' > "$D/a2.txt"
+a1="$("$SCRIPT" action-add "$D" --file "$D/a1.txt")"; a2="$("$SCRIPT" action-add "$D" --file "$D/a2.txt")"
+A="$(cd "$D" && pwd -P)/operator-actions.md"
+only="$("$SCRIPT" line "$D")"
+item 1 OPEN ' ' '' | sup_write
+both="$("$SCRIPT" line "$D")"
+"$SCRIPT" action-done "$D" A1 'A1 done, chạy ok' > /dev/null; rc=$?
+"$SCRIPT" action-done "$D" A1 'again' > /dev/null 2>&1; rc2=$?
+listed="$("$SCRIPT" action-list "$D")"
+if [ "$a1" = A1 ] && [ "$a2" = A2 ] && [ "$only" = "🛠 2 việc bạn cần tự làm (A1, A2) → $A" ] \
+   && [ "$both" = "🛠 2 việc bạn cần tự làm (A1, A2) → $A · ⏳ 1 đang chờ bạn (D1 mới) → $(cd "$D" && pwd -P)/pending-decisions.md (watcher off)" ] \
+   && [ "$rc" = 0 ] && [ "$rc2" = 1 ] && [ "$listed" = "A2 · Second step" ] \
+   && grep -q '^## A1 · DONE · ' "$A" && grep -q '^Done: .* A1 done, chạy ok$' "$A" && grep -q '^Reply: A2 done' "$A" \
+   && grep -q '^skill-mirror.sh sync$' "$A"; then
+  ok "operator actions are numbered, shown in the footer before decisions, and closed by action-done"
+else fail "operator actions are numbered, shown in the footer before decisions, and closed by action-done" "only=$only both=$both rc=$rc rc2=$rc2 listed=$listed file=$(cat "$A")"; fi
+
+# 40. action-add refuses an action without steps, Check: or Rollback:.
+total=$((total + 1)); new_case actions-bad
+printf 'No check\nrun it\nRollback: none\n' > "$D/x.txt"; "$SCRIPT" action-add "$D" --file "$D/x.txt" > /dev/null 2>&1; r1=$?
+printf 'No rollback\nrun it\nCheck: x\n' > "$D/x.txt"; "$SCRIPT" action-add "$D" --file "$D/x.txt" > /dev/null 2>&1; r2=$?
+printf 'No steps\nCheck: x\nRollback: y\n' > "$D/x.txt"; "$SCRIPT" action-add "$D" --file "$D/x.txt" > /dev/null 2>&1; r3=$?
+if [ "$r1" = 1 ] && [ "$r2" = 1 ] && [ "$r3" = 1 ] && [ ! -e "$D/operator-actions.md" ] && [ -z "$("$SCRIPT" line "$D")" ]; then
+  ok "action-add refuses an action without steps, Check: or Rollback:"
+else fail "action-add refuses an action without steps, Check: or Rollback:" "r1=$r1 r2=$r2 r3=$r3"; fi
+
+# 41. add and action-add refuse a body that holds a likely secret, and never print the value.
+total=$((total + 1)); new_case secrets
+pw="Zq7""wPx91kLm"
+printf 'M5\nCâu hỏi: dùng postgres://app:%s@db.example.com/x?\nChặn: x\n' "$pw" > "$D/q.txt"
+"$SCRIPT" add "$D" --file "$D/q.txt" > "$D/add.out" 2> "$D/add.err"; r1=$?
+printf 'Set the key\nexport KEY=%s\nCheck: x\nRollback: y\n' "AKIA""ABCDEFGHIJKLMNOP" > "$D/a.txt"
+"$SCRIPT" action-add "$D" --file "$D/a.txt" > /dev/null 2> "$D/act.err"; r2=$?
+if [ "$r1" = 1 ] && [ "$r2" = 1 ] && grep -qF "line 2: password in URL" "$D/add.err" && grep -qF "line 2: AWS access key" "$D/act.err" \
+   && ! grep -qF "$pw" "$D/add.err" "$D/pending-decisions.md" && ! grep -q 'AKIA' "$D/act.err" && [ ! -e "$D/operator-actions.md" ]; then
+  ok "add and action-add refuse a likely secret without printing it"
+else fail "add and action-add refuse a likely secret without printing it" "r1=$r1 r2=$r2 err=$(cat "$D/add.err" "$D/act.err")"; fi
+
+# 42. action-add refuses a "## " body line; action-done refuses several lines and a likely secret.
+total=$((total + 1)); new_case actions-shape
+printf 'Steps as headings\n## Step 1\nrun it\nCheck: x\nRollback: y\n' > "$D/h.txt"
+"$SCRIPT" action-add "$D" --file "$D/h.txt" > /dev/null 2> "$D/h.err"; r1=$?
+printf 'Fine\nrun it\nCheck: x\nRollback: y\n' > "$D/ok.txt"; "$SCRIPT" action-add "$D" --file "$D/ok.txt" > /dev/null
+"$SCRIPT" action-done "$D" A1 "$(printf 'done\n## A7 · OPEN · 2026-11-28 10:00 · fake')" > /dev/null 2>&1; r2=$?
+pw="Zq7""wPx91kLm"
+"$SCRIPT" action-done "$D" A1 "done, dùng redis://:$pw@h" > /dev/null 2> "$D/d.err"; r3=$?
+listed="$("$SCRIPT" action-list "$D")"
+if [ "$r1" = 1 ] && grep -qF "'## '" "$D/h.err" && [ "$r2" = 1 ] && [ "$r3" = 1 ] && ! grep -qF "$pw" "$D/d.err" "$D/operator-actions.md" \
+   && [ "$listed" = "A1 · Fine" ] && ! grep -q 'A7' "$D/operator-actions.md"; then
+  ok "action-add refuses a ## body line and action-done refuses several lines or a secret"
+else fail "action-add refuses a ## body line and action-done refuses several lines or a secret" "r1=$r1 r2=$r2 r3=$r3 listed=$listed"; fi
+
 echo "$pass/$total passed"
 [ "$pass" = "$total" ]

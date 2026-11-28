@@ -207,5 +207,59 @@ total=$((total + 1)); run "$CHECK" accept "$D2" M1 abc --scope src
 if [ "$RC" -eq 2 ] && has "run:" ; then ok "accept without setup exits 2 and prints the setup command"
 else fail "accept without setup exits 2 and prints the setup command" "$OUT"; fi
 
+SCAN="$HERE/../secret-scan.sh"
+# Fixture secrets are assembled at run time, so no secret-shaped literal sits in this file.
+FAKE_PW="Zq7""wPx91kLm"; FAKE_AWS="AKIA""ABCDEFGHIJKLMNOP"
+
+total=$((total + 1)); new_repo secret-report; merge_branch m2 src/feature.py 'x = 1'
+printf 'Done. Connected with postgres://app:%s@db.example.com/x\n' "$FAKE_PW" > "$D/report.txt"
+run "$CHECK" accept "$D" M2 "$SHA" --merge --scope src --report "$D/report.txt"; out1="$OUT"; rc1=$RC
+run "$CHECK" accept "$D" M2 "$SHA" --merge --scope src --report "$D/report.txt" --secret-ok "$D/report.txt:1"
+if [ "$rc1" -eq 1 ] && printf '%s' "$out1" | grep -qF "possible secret (password in URL) at $D/report.txt:1" \
+   && ! printf '%s' "$out1" | grep -qF "$FAKE_PW" \
+   && [ "$RC" -eq 0 ] && has "(--secret-ok)"; then ok "accept fails on a likely secret in the report without printing it, and --secret-ok skips that hit"
+else fail "accept fails on a likely secret in the report without printing it, and --secret-ok skips that hit" "$out1 /// $OUT"; fi
+
+total=$((total + 1)); new_repo secret-diff; merge_branch m3 src/config.py "aws_key = \"$FAKE_AWS\""
+run "$CHECK" accept "$D" M3 "$SHA" --merge --scope src
+if [ "$RC" -eq 1 ] && has "possible secret (AWS access key) at src/config.py:1" && ! has "$FAKE_AWS" && has "NOT done"; then
+  ok "accept fails on a likely secret that the session's merge added"
+else fail "accept fails on a likely secret that the session's merge added" "$OUT"; fi
+
+total=$((total + 1)); T="$ROOT/scan.txt"
+{ echo "postgres://app:<password>@h/db"; echo 'mysql://u:${DB_PASSWORD}@h/db'; echo "https://u:***@h"; echo "task-sk-ok risk-assessment"
+  echo "-----BEGIN OPENSSH PRIV""ATE KEY-----"; echo "ghp_$(printf 'a%.0s' {1..36})"; echo "eyJ""hbGciOiJIUzI1NiJ9.eyJ""zdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop"; } > "$T"
+got="$("$SCAN" "$T")"; rc=$?
+want="$T:5: private key
+$T:6: GitHub token
+$T:7: JWT"
+if [ "$rc" -eq 1 ] && [ "$got" = "$want" ]; then ok "secret-scan flags key, token and JWT lines and skips placeholders"
+else fail "secret-scan flags key, token and JWT lines and skips placeholders" "rc=$rc got=$got"; fi
+
+total=$((total + 1)); new_repo actions-resume
+printf 'Rotate the DB password\nIn the Supabase dashboard, reset it\nCheck: the app connects\nRollback: none needed\n' > "$ROOT/act.txt"
+"$PW" action-add "$D" --file "$ROOT/act.txt" > /dev/null
+run "$CHECK" resume "$D"
+if has "operator actions still open" && has "A1 · Rotate the DB password"; then ok "resume lists the operator actions still open"
+else fail "resume lists the operator actions still open" "$OUT"; fi
+
+total=$((total + 1)); T="$ROOT/scan2.txt"; long="$(printf 'b%.0s' {1..24})"; slashed="ab/cd$FAKE_PW"
+{ echo "redis://:$FAKE_PW@host:6379"; echo "postgres://app:$slashed@db/x"; echo "postgres://postgres:postgres@localhost:5432/dev"
+  echo "http://localhost:3000?next=a@b"; echo "name task-sk-$long"; echo "key sk-$long"; echo "https://example.com/a:b@c"
+  printf '{"api":"http://api:8080/v1","db":"postgres://app:%s@db.example.com/x"}\n' "$FAKE_PW"
+  echo "http://api:8080/v1,http://localhost:3000?next=a@b"; } > "$T"
+got="$("$SCAN" "$T")"; rc=$?
+want="$T:1: password in URL
+$T:2: password in URL
+$T:6: sk- API key
+$T:8: password in URL"
+if [ "$rc" -eq 1 ] && [ "$got" = "$want" ]; then ok "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names, also after a host:port URL on the same line"
+else fail "secret-scan flags an empty user and a slash in the password, and skips defaults, ports and -sk- names, also after a host:port URL on the same line" "rc=$rc got=$got"; fi
+
+total=$((total + 1))
+got="$(printf 'diff --git a/x b/x\n--- a/x\n+++ b/src/x.py\n@@ -1,2 +1,4 @@\n a\n+++ %s\n+u = "redis://:%s@h"\n b\n' "$FAKE_PW" "$FAKE_PW" | "$SCAN" --diff)"
+if [ "$got" = "src/x.py:3: password in URL" ]; then ok "secret-scan --diff reads an added line starting with ++ as content, never as a file name"
+else fail "secret-scan --diff reads an added line starting with ++ as content, never as a file name" "got=$got"; fi
+
 echo "$pass/$total passed"
 [ "$pass" -eq "$total" ]
